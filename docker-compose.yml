@@ -1,0 +1,38 @@
+services:
+  wecomchan:
+    image: gowfqk/go-wecomchan:latest
+    container_name: wecomchan
+    ports:
+      - "8080:8080"
+    environment:
+      - SENDKEY=${SENDKEY:-set_a_sendkey}
+      - WECOM_CID=${WECOM_CID}
+      - WECOM_SECRET=${WECOM_SECRET}
+      - WECOM_AID=${WECOM_AID}
+      - WECOM_TOUID=${WECOM_TOUID:-@all}
+      - CACHE_TYPE=${CACHE_TYPE:-memory}
+      - REDIS_STAT=${REDIS_STAT:-OFF}
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # 可选：使用 Redis 缓存时启用
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: wecomchan-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+
+# volumes:
+#   redis-data:
