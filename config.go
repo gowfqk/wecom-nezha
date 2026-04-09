@@ -12,11 +12,17 @@ var WecomCid = GetEnvDefault("WECOM_CID", "企业微信公司ID")
 var WecomSecret = GetEnvDefault("WECOM_SECRET", "企业微信应用Secret")
 var WecomAid = GetEnvDefault("WECOM_AID", "企业微信应用ID")
 var WecomToUid = GetEnvDefault("WECOM_TOUID", "@all")
+var WecomToken = GetEnvDefault("WECOM_TOKEN", "")       // 回调验证Token
+var WecomEncodingAESKey = GetEnvDefault("WECOM_ENCODING_AES_KEY", "") // 回调EncodingAESKey
 var CacheType = GetEnvDefault("CACHE_TYPE", "none")
 var RedisStat = GetEnvDefault("REDIS_STAT", "OFF")
 var RedisAddr = GetEnvDefault("REDIS_ADDR", "localhost:6379")
 var RedisPassword = GetEnvDefault("REDIS_PASSWORD", "")
 var MailFooterUrl = GetEnvDefault("MAIL_FOOTER_URL", "")
+
+// Nezha 配置
+var NezhaUrl = GetEnvDefault("NEZHA_URL", "")    // Nezha 面板地址，如 https://nezha.example.com
+var NezhaToken = GetEnvDefault("NEZHA_TOKEN", "") // Nezha API Token
 
 var ctx = context.Background()
 var httpClient = &http.Client{Timeout: 10 * time.Second}

@@ -53,3 +53,59 @@ type MailAttachment struct {
 	FileName string `json:"file_name"`
 	Content  string `json:"content"`
 }
+
+// 企微回调消息体
+type WecomCallbackRequest struct {
+	Signature string `json:"signature"`
+	Timestamp string `json:"timestamp"`
+	Nonce    string `json:"nonce"`
+	Echostr  string `json:"echostr,omitempty"`
+	Msg      string `json:"msg,omitempty"`
+}
+
+// 企微回调解密后的消息
+type WecomCallbackMessage struct {
+	ToUserName   string
+	FromUserName string
+	CreateTime   int
+	MsgType      string
+	Content      string
+	MsgId        int64
+	AgentID      string
+}
+
+// Nezha API 响应
+type NezhaServer struct {
+	ID         uint   `json:"id"`
+	Name       string `json:"name"`
+	Tag        string `json:"tag"`
+	Note       string `json:"note,omitempty"`
+	PublicNote string `json:"public_note,omitempty"`
+	LastActive int64  `json:"last_active"`
+	ValidIP    string `json:"valid_ip"`
+	Online     bool   `json:"online"`
+	Host       struct {
+		Platform        string   `json:"Platform"`
+		PlatformVersion string   `json:"PlatformVersion"`
+		CPU            []string `json:"CPU"`
+		MemTotal       uint64   `json:"MemTotal"`
+		DiskTotal      uint64   `json:"DiskTotal"`
+	} `json:"host"`
+	Status struct {
+		CPU         float64 `json:"CPU"`
+		MemUsed     uint64  `json:"MemUsed"`
+		DiskUsed    uint64  `json:"DiskUsed"`
+		NetInSpeed  float64 `json:"NetInSpeed"`
+		NetOutSpeed float64 `json:"NetOutSpeed"`
+		Load1       float64 `json:"Load1"`
+		Load5       float64 `json:"Load5"`
+		Load15      float64 `json:"Load15"`
+		Uptime      uint64  `json:"Uptime"`
+	} `json:"status"`
+}
+
+type NezhaAPIResponse struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Result interface{}     `json:"result"`
+}
