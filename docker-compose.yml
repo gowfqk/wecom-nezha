@@ -10,6 +10,9 @@ services:
       - WECOM_SECRET=${WECOM_SECRET}
       - WECOM_AID=${WECOM_AID}
       - WECOM_TOUID=${WECOM_TOUID:-@all}
+      - WECOM_TOKEN=${WECOM_TOKEN}
+      - NEZHA_URL=${NEZHA_URL}
+      - NEZHA_TOKEN=${NEZHA_TOKEN}
       - CACHE_TYPE=${CACHE_TYPE:-memory}
       - REDIS_STAT=${REDIS_STAT:-OFF}
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
