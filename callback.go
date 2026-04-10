@@ -181,10 +181,20 @@ func decryptMsg(encryptMsg string) (string, error) {
 		return "", fmt.Errorf("Base64解码失败: %v", err)
 	}
 
-	// 解码 AES Key (43字符 -> 32字节)
-	aesKey, err := base64.StdEncoding.DecodeString(WecomEncodingAESKey + "=")
+	// 解码 AES Key (43字符 -> 32字节)，补齐 Base64 padding
+	aesKeyStr := WecomEncodingAESKey
+	switch len(aesKeyStr) % 4 {
+	case 2:
+		aesKeyStr += "=="
+	case 3:
+		aesKeyStr += "="
+	}
+	aesKey, err := base64.StdEncoding.DecodeString(aesKeyStr)
 	if err != nil {
 		return "", fmt.Errorf("AES Key解码失败: %v", err)
+	}
+	if len(aesKey) != 32 {
+		return "", fmt.Errorf("AES Key长度错误: 期望32字节, 实际%d字节", len(aesKey))
 	}
 
 	// AES 解密
@@ -194,6 +204,9 @@ func decryptMsg(encryptMsg string) (string, error) {
 	}
 
 	blockSize := block.BlockSize()
+	if len(encryptedBytes) < blockSize || len(encryptedBytes)%blockSize != 0 {
+		return "", fmt.Errorf("密文长度无效: %d", len(encryptedBytes))
+	}
 	iv := encryptedBytes[:blockSize]
 	encryptedData := encryptedBytes[blockSize:]
 
@@ -202,22 +215,42 @@ func decryptMsg(encryptMsg string) (string, error) {
 	mode := cipher.NewCBCDecrypter(block, iv)
 	mode.CryptBlocks(decrypted, encryptedData)
 
-	// 去除 PKCS7 填充
-	decrypted = pkcs7Unpad(decrypted)
+	// 去除 PKCS7 填充（带校验）
+	decrypted, err = pkcs7Unpad(decrypted)
+	if err != nil {
+		return "", fmt.Errorf("解密失败，Token或EncodingAESKey可能不正确: %v", err)
+	}
 
 	// 格式: random(16) + msg_len(4) + msg + corp_id
-	// 去除前面的16字节随机数和后面的corp_id
+	if len(decrypted) < 20 {
+		return "", fmt.Errorf("解密后数据过短: %d字节", len(decrypted))
+	}
 	msgLen := int(decrypted[16])<<24 | int(decrypted[17])<<16 | int(decrypted[18])<<8 | int(decrypted[19])
+	if msgLen < 0 || 20+msgLen > len(decrypted) {
+		return "", fmt.Errorf("消息长度无效: %d（Token或EncodingAESKey可能不正确）", msgLen)
+	}
 	msg := decrypted[20 : 20+msgLen]
 
 	return string(msg), nil
 }
 
-// pkcs7Unpad 去除 PKCS7 填充
-func pkcs7Unpad(data []byte) []byte {
+// pkcs7Unpad 去除 PKCS7 填充（带校验）
+func pkcs7Unpad(data []byte) ([]byte, error) {
 	length := len(data)
+	if length == 0 {
+		return nil, fmt.Errorf("数据为空")
+	}
 	unpadding := int(data[length-1])
-	return data[:length-unpadding]
+	if unpadding <= 0 || unpadding > 16 || unpadding > length {
+		return nil, fmt.Errorf("无效的PKCS7填充: %d", unpadding)
+	}
+	// 校验填充字节是否一致
+	for i := length - unpadding; i < length; i++ {
+		if data[i] != byte(unpadding) {
+			return nil, fmt.Errorf("PKCS7填充校验失败")
+		}
+	}
+	return data[:length-unpadding], nil
 }
 
 // processUserMessage 处理用户消息，返回回复内容
