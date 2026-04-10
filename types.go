@@ -104,8 +104,21 @@ type NezhaServer struct {
 	} `json:"status"`
 }
 
+// Nezha API 响应
 type NezhaAPIResponse struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Result interface{}     `json:"result"`
+	Success bool        `json:"success"`
+	Error   string     `json:"error"`
+	Data    interface{} `json:"data"`
+}
+
+// Nezha 登录响应
+type NezhaLoginResponse struct {
+	Success bool           `json:"success"`
+	Error   string         `json:"error"`
+	Data    NezhaLoginData `json:"data"`
+}
+
+type NezhaLoginData struct {
+	Token  string `json:"token"`
+	Expire string `json:"expire"`
 }

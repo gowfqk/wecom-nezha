@@ -9,19 +9,84 @@ import (
 	"time"
 )
 
-// GetNezhaServerList 获取服务器列表
-func GetNezhaServerList() ([]NezhaServer, error) {
-	if NezhaUrl == "" || NezhaToken == "" {
-		return nil, fmt.Errorf("Nezha配置未设置")
+var nezhaAccessToken = ""
+var nezhaTokenExpire time.Time
+
+// NezhaLogin 登录获取 Token
+func NezhaLogin() error {
+	if NezhaUrl == "" || NezhaUsername == "" || NezhaPassword == "" {
+		return fmt.Errorf("Nezha登录配置未设置")
 	}
 
-	url := fmt.Sprintf("%s/api/v1/server/list", strings.TrimRight(NezhaUrl, "/"))
+	// 检查 token 是否还有效（提前5分钟过期）
+	if nezhaAccessToken != "" && time.Now().Add(5*time.Minute).Before(nezhaTokenExpire) {
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/api/v1/login", strings.TrimRight(NezhaUrl, "/"))
+	loginData := map[string]string{
+		"username": NezhaUsername,
+		"password": NezhaPassword,
+	}
+
+	jsonData, err := json.Marshal(loginData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var result NezhaLoginResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+
+	if !result.Success {
+		return fmt.Errorf("登录失败: %s", result.Error)
+	}
+
+	nezhaAccessToken = result.Data.Token
+	// 解析过期时间
+	expireTime, err := time.Parse(time.RFC3339, result.Data.Expire)
+	if err != nil {
+		// 如果解析失败，默认1小时后过期
+		nezhaTokenExpire = time.Now().Add(time.Hour)
+	} else {
+		nezhaTokenExpire = expireTime
+	}
+
+	return nil
+}
+
+// GetNezhaServerList 获取服务器列表
+func GetNezhaServerList() ([]NezhaServer, error) {
+	// 先登录获取 token
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server", strings.TrimRight(NezhaUrl, "/"))
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+NezhaToken)
+	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -39,11 +104,11 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		return nil, err
 	}
 
-	if result.Code != 0 {
-		return nil, fmt.Errorf("API错误: %s", result.Message)
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
 	}
 
-	data, err := json.Marshal(result.Result)
+	data, err := json.Marshal(result.Data)
 	if err != nil {
 		return nil, err
 	}

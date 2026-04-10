@@ -21,8 +21,9 @@ var RedisPassword = GetEnvDefault("REDIS_PASSWORD", "")
 var MailFooterUrl = GetEnvDefault("MAIL_FOOTER_URL", "")
 
 // Nezha 配置
-var NezhaUrl = GetEnvDefault("NEZHA_URL", "")    // Nezha 面板地址，如 https://nezha.example.com
-var NezhaToken = GetEnvDefault("NEZHA_TOKEN", "") // Nezha API Token
+var NezhaUrl = GetEnvDefault("NEZHA_URL", "")      // Nezha 面板地址，如 https://nezha.example.com
+var NezhaUsername = GetEnvDefault("NEZHA_USERNAME", "") // Nezha 用户名
+var NezhaPassword = GetEnvDefault("NEZHA_PASSWORD", "") // Nezha 密码
 
 var ctx = context.Background()
 var httpClient = &http.Client{Timeout: 10 * time.Second}
