@@ -34,7 +34,7 @@ func verifyCallback(res http.ResponseWriter, req *http.Request) {
 	signature := req.URL.Query().Get("signature")
 	timestamp := req.URL.Query().Get("timestamp")
 	nonce := req.URL.Query().Get("nonce")
-	echostr := req.URL.Query().Get("echostr")
+	echostr := strings.ReplaceAll(req.URL.Query().Get("echostr"), " ", "+")
 	msgSignature := req.URL.Query().Get("msg_signature")
 
 	logger.Printf("收到回调验证请求: signature=%s, timestamp=%s, nonce=%s, echostr=%s, msg_signature=%s", 
