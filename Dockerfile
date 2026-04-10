@@ -1,4 +1,4 @@
-FROM golang:1.16.5-alpine3.13 AS gobuilder
+FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS builder
 
 # 替换为国内源
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
@@ -7,19 +7,21 @@ ENV GO111MODULE="on"
 ENV GOPROXY="https://goproxy.cn,direct"
 ENV CGO_ENABLED=0
 
-WORKDIR /go/src/app
+WORKDIR /build
 COPY . .
 
-RUN apk update && apk upgrade && apk add --no-cache ca-certificates
-RUN update-ca-certificates
-RUN go build
+RUN apk add --no-cache git ca-certificates tzdata && \
+    update-ca-certificates && \
+    go build -ldflags="-s -w" -o wecomchan
 
-FROM scratch
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata && \
+    update-ca-certificates
 
 WORKDIR /root
 
-COPY --from=gobuilder /go/src/app/wecomchan .
-COPY --from=gobuilder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /build/wecomchan .
 
 EXPOSE 8080
 
