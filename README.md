@@ -5,10 +5,12 @@
 ## 功能特性
 
 - ✅ **企业微信消息推送**：文本、Markdown、图片、链接
+- ✅ **企业微信邮件发送**：支持抄送、密送、附件
 - ✅ **哪吒监控集成**：
   - 接收企业微信消息，查询服务器状态
   - 支持关键词：`状态`、`离线`、`列表`、`帮助`
   - 支持服务器名称精确/模糊查询
+- ✅ **企业微信回调**：支持明文模式和加密模式
 - ✅ **健康检查**：`/healthz`（存活）、`/readyz`（就绪）
 - ✅ **Docker 部署**：支持多架构构建（amd64、arm64）
 
@@ -24,17 +26,29 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SENDKEY=your_sendkey
-      - WECOM_CID=your_corpid
-      - WECOM_SECRET=your_secret
-      - WECOM_AID=your_agentid
-      - WECOM_TOUID=@all
-      - WECOM_TOKEN=your_callback_token
-      - NEZHA_URL=https://nezha.example.com
-      - NEZHA_USERNAME=admin
-      - NEZHA_PASSWORD=your_password
-      - CACHE_TYPE=memory
+      - SENDKEY=${SENDKEY:-set_a_sendkey}
+      - WECOM_CID=${WECOM_CID}
+      - WECOM_SECRET=${WECOM_SECRET}
+      - WECOM_AID=${WECOM_AID}
+      - WECOM_TOUID=${WECOM_TOUID:-@all}
+      - WECOM_TOKEN=${WECOM_TOKEN}
+      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
+      - NEZHA_URL=${NEZHA_URL}
+      - NEZHA_USERNAME=${NEZHA_USERNAME}
+      - NEZHA_PASSWORD=${NEZHA_PASSWORD}
+      - CACHE_TYPE=${CACHE_TYPE:-memory}
+      - REDIS_STAT=${REDIS_STAT:-OFF}
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 ```
 
 ### Docker 运行
@@ -46,6 +60,7 @@ docker run -d -p 8080:8080 \
   -e WECOM_SECRET=your_secret \
   -e WECOM_AID=your_agentid \
   -e WECOM_TOKEN=your_callback_token \
+  -e WECOM_ENCODING_AES_KEY=your_aes_key \
   -e NEZHA_URL=https://nezha.example.com \
   -e NEZHA_USERNAME=admin \
   -e NEZHA_PASSWORD=your_password \
@@ -73,6 +88,28 @@ docker run -d -p 8080:8080 \
 }
 ```
 
+### 发送邮件 - `/mail`
+
+**请求方式**：`POST`
+
+**Content-Type**: `application/json`
+
+**请求体示例**：
+
+```json
+{
+  "sendkey": "your_sendkey",
+  "to": {
+    "emails": ["user@example.com"]
+  },
+  "subject": "邮件主题",
+  "content": "邮件内容",
+  "content_type": "text"
+}
+```
+
+**可选字段**：`cc`（抄送）、`bcc`（密送）、`attachment_list`（附件）、`enable_id_trans`（userid转openid）
+
 ### 企业微信回调 - `/callback`
 
 **请求方式**：`GET`（验证回调URL）、`POST`（接收消息）
@@ -82,7 +119,8 @@ docker run -d -p 8080:8080 \
 **配置步骤**：
 1. 在企业微信后台配置回调URL为 `https://your-domain.com/callback`
 2. 设置回调Token和EncodingAESKey
-3. 配置环境变量 `WECOM_TOKEN`
+3. 配置环境变量 `WECOM_TOKEN`（回调Token）
+4. 如使用加密模式，还需配置 `WECOM_ENCODING_AES_KEY`（EncodingAESKey）
 
 **支持的命令**：
 
@@ -108,27 +146,35 @@ docker run -d -p 8080:8080 \
 | `WECOM_SECRET` | 企业微信应用 Secret | - |
 | `WECOM_AID` | 企业微信应用 ID | - |
 | `WECOM_TOUID` | 默认接收人 | `@all` |
-| `WECOM_TOKEN` | 企业微信回调Token | - |
-| `WECOM_ENCODING_AES_KEY` | 企业微信EncodingAESKey（加密模式） | - |
+| `WECOM_TOKEN` | 企业微信回调 Token | - |
+| `WECOM_ENCODING_AES_KEY` | 企业微信回调 EncodingAESKey（加密模式） | - |
 | `NEZHA_URL` | 哪吒监控面板地址 | - |
 | `NEZHA_USERNAME` | 哪吒用户名 | - |
 | `NEZHA_PASSWORD` | 哪吒密码 | - |
 | `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis` | `none` |
+| `REDIS_STAT` | Redis 状态：`ON`/`OFF` | `OFF` |
+| `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
+| `REDIS_PASSWORD` | Redis 密码 | - |
+| `MAIL_FOOTER_URL` | 邮件底部链接地址 | - |
 
 ## 项目结构
 
 ```
 .
+├── main.go             # 程序入口，路由注册
 ├── config.go           # 配置和全局变量
 ├── types.go            # 结构体定义
 ├── utils.go            # 工具函数
+├── utils_test.go       # 工具函数测试
 ├── wecom_api.go        # 企业微信 API 封装
 ├── nezha_api.go        # 哪吒监控 API 封装
-├── handlers.go         # HTTP 处理器
-├── callback.go         # 回调接口处理
-├── main.go             # 程序入口
+├── handlers.go         # HTTP 处理器（/wecomchan, /mail）
+├── callback.go         # 企业微信回调处理（明文/加密模式）
+├── wecomchan.go        # 遗留入口文件（已重构）
 ├── docker-compose.yml  # Docker Compose 配置
-└── Dockerfile
+├── Dockerfile
+├── docs/               # 文档
+└── .github/            # GitHub Actions CI/CD
 ```
 
 ## 构建
