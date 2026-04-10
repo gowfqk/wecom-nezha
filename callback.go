@@ -109,6 +109,8 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		decryptedContent, err := decryptMsg(msg.Encrypt)
 		if err != nil {
 			logger.Printf("解密消息失败: %v", err)
+			// 调试：打印密文前20字符和长度
+			logger.Printf("调试: Encrypt长度=%d, 前20字符=%q", len(msg.Encrypt), msg.Encrypt[:20])
 			return
 		}
 		
@@ -204,6 +206,11 @@ func decryptMsg(encryptMsg string) (string, error) {
 	decrypted := make([]byte, len(encryptedBytes))
 	mode := cipher.NewCBCDecrypter(block, iv)
 	mode.CryptBlocks(decrypted, encryptedBytes)
+
+	// 调试：打印解密后末尾16字节
+	if len(decrypted) >= 16 {
+		logger.Printf("调试: 解密后末尾16字节=%v", decrypted[len(decrypted)-16:])
+	}
 
 	// 去除 PKCS7 填充（带校验）
 	decrypted, err = pkcs7Unpad(decrypted)
