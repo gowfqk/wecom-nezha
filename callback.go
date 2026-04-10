@@ -109,8 +109,6 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		decryptedContent, err := decryptMsg(msg.Encrypt)
 		if err != nil {
 			logger.Printf("解密消息失败: %v", err)
-			// 调试：打印密文前20字符和长度
-			logger.Printf("调试: Encrypt长度=%d, 前20字符=%q", len(msg.Encrypt), msg.Encrypt[:20])
 			return
 		}
 		
@@ -207,16 +205,7 @@ func decryptMsg(encryptMsg string) (string, error) {
 	mode := cipher.NewCBCDecrypter(block, iv)
 	mode.CryptBlocks(decrypted, encryptedBytes)
 
-	// 调试：打印解密后末尾16字节
-	if len(decrypted) >= 16 {
-		logger.Printf("调试: 解密后末尾16字节=%v", decrypted[len(decrypted)-16:])
-	}
-
-	// 去除 PKCS7 填充（带校验）
-	decrypted, err = pkcs7Unpad(decrypted)
-	if err != nil {
-		return "", fmt.Errorf("解密失败，Token或EncodingAESKey可能不正确: %v", err)
-	}
+	// 微信消息解密不用PKCS7，直接用msg_len字段定位消息
 
 	// 格式: random(16) + msg_len(4) + msg + corp_id
 	if len(decrypted) < 20 {
