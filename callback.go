@@ -33,19 +33,18 @@ func verifyCallback(res http.ResponseWriter, req *http.Request) {
 	nonce := req.URL.Query().Get("nonce")
 	echostr := req.URL.Query().Get("echostr")
 
+	logger.Printf("收到回调验证请求: signature=%s, timestamp=%s, nonce=%s, echostr=%s", signature, timestamp, nonce, echostr)
+
 	// 验证签名
 	if !verifySignature(signature, timestamp, nonce, WecomToken) {
+		logger.Printf("签名验证失败: expected signature")
 		http.Error(res, "签名验证失败", http.StatusForbidden)
 		return
 	}
 
+	logger.Println("回调验证成功")
 	// 返回 echostr
-	if WecomEncodingAESKey != "" {
-		// 加密模式（简化处理）
-		res.Write([]byte(echostr))
-	} else {
-		res.Write([]byte(echostr))
-	}
+	res.Write([]byte(echostr))
 }
 
 // handleCallbackMessage 处理接收到的消息
@@ -54,8 +53,11 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 	timestamp := req.URL.Query().Get("timestamp")
 	nonce := req.URL.Query().Get("nonce")
 
+	logger.Printf("收到回调消息: signature=%s, timestamp=%s, nonce=%s", signature, timestamp, nonce)
+
 	// 验证签名
 	if !verifySignature(signature, timestamp, nonce, WecomToken) {
+		logger.Println("消息签名验证失败")
 		http.Error(res, "签名验证失败", http.StatusForbidden)
 		return
 	}
@@ -63,18 +65,24 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 	// 读取消息体
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
+		logger.Printf("读取消息体失败: %v", err)
 		return
 	}
+	logger.Printf("收到消息内容: %s", string(body))
 
 	// 解析 XML 消息
 	var msg WecomCallbackMessage
 	if err := xml.Unmarshal(body, &msg); err != nil {
+		logger.Printf("解析XML消息失败: %v", err)
 		return
 	}
+
+	logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s", msg.MsgType, msg.FromUserName, msg.Content)
 
 	// 处理文本消息
 	if msg.MsgType == "text" {
 		response := processUserMessage(msg.Content)
+		logger.Printf("发送回复: %s", response)
 		sendReplyMessage(msg.FromUserName, response)
 	}
 
@@ -247,11 +255,15 @@ CPU: %.1f%%
 // sendReplyMessage 发送回复消息
 func sendReplyMessage(toUser, content string) {
 	if content == "" {
+		logger.Println("回复内容为空，跳过发送")
 		return
 	}
 
+	logger.Printf("准备发送消息给用户: %s", toUser)
+
 	accessToken := GetAccessToken()
 	if accessToken == "" {
+		logger.Println("获取access_token失败")
 		return
 	}
 
@@ -263,5 +275,8 @@ func sendReplyMessage(toUser, content string) {
 	}
 
 	url := fmt.Sprintf(SendMessageApi, accessToken)
-	PostMsg(postData, url)
+	logger.Printf("发送消息URL: %s", url)
+	
+	result := PostMsg(postData, url)
+	logger.Printf("发送消息结果: %s", result)
 }
