@@ -120,24 +120,24 @@ type NezhaServer struct {
 	LastActive FlexibleInt64 `json:"last_active"`
 	ValidIP    string `json:"valid_ip"`
 	Online     bool   `json:"online"`
-	Host       struct {
-		Platform        string   `json:"Platform"`
-		PlatformVersion string   `json:"PlatformVersion"`
-		CPU            []string `json:"CPU"`
-		MemTotal       uint64   `json:"MemTotal"`
-		DiskTotal      uint64   `json:"DiskTotal"`
+	Host struct {
+		Platform        string   `json:"platform"`
+		PlatformVersion string   `json:"platform_version"`
+		CPU            []string `json:"cpu"`
+		MemTotal       uint64   `json:"mem_total"`
+		DiskTotal      uint64   `json:"disk_total"`
 	} `json:"host"`
-	Status struct {
-		CPU         float64 `json:"CPU"`
-		MemUsed     uint64  `json:"MemUsed"`
-		DiskUsed    uint64  `json:"DiskUsed"`
-		NetInSpeed  float64 `json:"NetInSpeed"`
-		NetOutSpeed float64 `json:"NetOutSpeed"`
-		Load1       float64 `json:"Load1"`
-		Load5       float64 `json:"Load5"`
-		Load15      float64 `json:"Load15"`
-		Uptime      uint64  `json:"Uptime"`
-	} `json:"status"`
+	State struct {
+		CPU         float64 `json:"cpu"`
+		MemUsed     uint64  `json:"mem_used"`
+		DiskUsed    uint64  `json:"disk_used"`
+		NetInSpeed  float64 `json:"net_in_speed"`
+		NetOutSpeed float64 `json:"net_out_speed"`
+		Load1       float64 `json:"load_1"`
+		Load5       float64 `json:"load_5"`
+		Load15      float64 `json:"load_15"`
+		Uptime      uint64  `json:"uptime"`
+	} `json:"state"`
 }
 
 // Nezha API 响应

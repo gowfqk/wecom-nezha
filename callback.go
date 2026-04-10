@@ -386,10 +386,10 @@ CPU: %.1f%%
 磁盘: %d / %d GB
 负载: %.2f / %.2f / %.2f`,
 		server.Name, status, server.ValidIP, server.Note,
-		server.Status.CPU,
-		server.Status.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
-		server.Status.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
-		server.Status.Load1, server.Status.Load5, server.Status.Load15)
+		server.State.CPU,
+		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
+		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
+		server.State.Load1, server.State.Load5, server.State.Load15)
 }
 
 // sendReplyMessage 发送回复消息
