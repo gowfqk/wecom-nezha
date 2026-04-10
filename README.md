@@ -1,6 +1,6 @@
 # go-wecomchan
 
-通过企业微信向微信推送消息的 Go 语言解决方案。
+通过企业微信向微信推送消息的 Go 语言解决方案，支持哪吒监控集成。
 
 > 本项目基于 [wecomchan](https://github.com/easychen/wecomchan) 重构而来。
 
@@ -10,6 +10,11 @@
 - ✅ **多接口设计**：
   - `/wecomchan` - 企业内部应用消息
   - `/mail` - 邮件推送消息
+  - `/callback` - 企业微信回调接口（支持哪吒监控交互）
+- ✅ **哪吒监控集成**：
+  - 接收企业微信消息，查询服务器状态
+  - 支持关键词：`状态`、`离线`、`列表`、`帮助`
+  - 支持服务器名称精确/模糊查询
 - ✅ **灵活传参**：Body JSON 传参、URL 参数传参
 - ✅ **多重缓存**：不缓存、内存缓存、Redis 缓存
 - ✅ **健康检查**：`/healthz`（存活）、`/readyz`（就绪）
@@ -33,6 +38,9 @@ services:
       - WECOM_SECRET=your_secret
       - WECOM_AID=your_agentid
       - WECOM_TOUID=@all
+      - WECOM_TOKEN=your_callback_token
+      - NEZHA_URL=https://nezha.example.com
+      - NEZHA_API_KEY=your_nezha_api_key
       - CACHE_TYPE=memory
     restart: unless-stopped
 ```
@@ -45,6 +53,9 @@ docker run -d -p 8080:8080 \
   -e WECOM_CID=your_corpid \
   -e WECOM_SECRET=your_secret \
   -e WECOM_AID=your_agentid \
+  -e WECOM_TOKEN=your_callback_token \
+  -e NEZHA_URL=https://nezha.example.com \
+  -e NEZHA_API_KEY=your_nezha_api_key \
   -e CACHE_TYPE=memory \
   gowfqk/go-wecomchan:latest
 ```
@@ -57,6 +68,9 @@ export SENDKEY=your_sendkey
 export WECOM_CID=your_corpid
 export WECOM_SECRET=your_secret
 export WECOM_AID=your_agentid
+export WECOM_TOKEN=your_callback_token
+export NEZHA_URL=https://nezha.example.com
+export NEZHA_API_KEY=your_nezha_api_key
 export CACHE_TYPE=memory
 
 # 运行
@@ -136,6 +150,27 @@ go run .
 | `attachment_list[].content` | 否 | 文件内容（base64编码） |
 | `enable_id_trans` | 否 | 是否开启id转译：`0`（默认）或 `1` |
 
+### 企业微信回调 - `/callback`
+
+**请求方式**：`GET`（验证回调URL）、`POST`（接收消息）
+
+用于接收企业微信消息，并提供哪吒监控服务器状态查询功能。
+
+**配置步骤**：
+1. 在企业微信后台配置回调URL为 `https://your-domain.com/callback`
+2. 设置回调Token和EncodingAESKey
+3. 配置环境变量 `WECOM_TOKEN`
+
+**支持的命令**：
+
+| 命令 | 说明 |
+|------|------|
+| `帮助` / `help` / `?` | 显示帮助信息 |
+| `状态` / `状态查询` | 查看服务器在线状态摘要 |
+| `离线` | 查看离线服务器列表 |
+| `列表` / `list` | 查看所有服务器 |
+| `<服务器名>` | 查询指定服务器详情（支持模糊匹配） |
+
 ### 健康检查
 
 - **存活检查**: `GET /healthz`
@@ -150,6 +185,10 @@ go run .
 | `WECOM_SECRET` | 企业微信应用 Secret | - |
 | `WECOM_AID` | 企业微信应用 ID | - |
 | `WECOM_TOUID` | 默认接收人 | `@all` |
+| `WECOM_TOKEN` | 企业微信回调Token | - |
+| `WECOM_ENCODING_AES_KEY` | 企业微信EncodingAESKey（加密模式） | - |
+| `NEZHA_URL` | 哪吒监控地址 | - |
+| `NEZHA_API_KEY` | 哪吒监控API Key | - |
 | `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis` | `none` |
 | `REDIS_STAT` | Redis 开关：`ON`/`OFF` | `OFF` |
 | `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
@@ -176,7 +215,9 @@ go run .
 ├── utils.go            # 工具函数
 ├── utils_test.go       # 单元测试
 ├── wecom_api.go        # 企业微信 API 封装
+├── nezha_api.go        # 哪吒监控 API 封装
 ├── handlers.go         # HTTP 处理器
+├── callback.go         # 回调接口处理
 ├── main.go             # 程序入口
 ├── wecomchan.go        # 原入口（已废弃，保留兼容）
 ├── docker-compose.yml  # Docker Compose 配置
