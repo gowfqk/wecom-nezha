@@ -1,7 +1,7 @@
 services:
-  wecomchan:
-    image: gowfqk/go-wecomchan:latest
-    container_name: wecomchan
+  wecom-nezha:
+    image: gowfqk/wecom-nezha:latest
+    container_name: wecom-nezha
     ports:
       - "8080:8080"
     environment:

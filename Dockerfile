@@ -12,7 +12,7 @@ COPY . .
 
 RUN apk add --no-cache git ca-certificates tzdata && \
     update-ca-certificates && \
-    go build -ldflags="-s -w" -o wecomchan
+    go build -ldflags="-s -w" -o wecom-nezha
 
 FROM alpine:3.19
 
@@ -21,8 +21,8 @@ RUN apk add --no-cache ca-certificates tzdata && \
 
 WORKDIR /root
 
-COPY --from=builder /build/wecomchan .
+COPY --from=builder /build/wecom-nezha .
 
 EXPOSE 8080
 
-CMD ["./wecomchan"]
+CMD ["./wecom-nezha"]
