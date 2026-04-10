@@ -1,6 +1,12 @@
 package main
 
-import "encoding/xml"
+import (
+	"encoding/json"
+	"encoding/xml"
+	"fmt"
+	"strconv"
+	"time"
+)
 
 type RequestBody struct {
 	Sendkey  string    `json:"sendkey"`
@@ -78,14 +84,40 @@ type WecomCallbackMessage struct {
 	Encrypt      string   `xml:"Encrypt"` // 加密模式下的消息内容
 }
 
-// Nezha API 响应
+// FlexibleInt64 兼容 int64 和 string 类型的 JSON 字段
+type FlexibleInt64 int64
+
+func (f *FlexibleInt64) UnmarshalJSON(data []byte) error {
+	// 尝试直接解析为数字
+	var n int64
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexibleInt64(n)
+		return nil
+	}
+	// 尝试解析为字符串
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("FlexibleInt64: 无法解析为 int64 或 string: %s", string(data))
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		*f = FlexibleInt64(n)
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		*f = FlexibleInt64(t.Unix())
+		return nil
+	}
+	return fmt.Errorf("FlexibleInt64: 无法将字符串 %q 解析为 int64", s)
+}
+
+// NezhaServer 服务器信息
 type NezhaServer struct {
 	ID         uint   `json:"id"`
 	Name       string `json:"name"`
 	Tag        string `json:"tag"`
 	Note       string `json:"note,omitempty"`
 	PublicNote string `json:"public_note,omitempty"`
-	LastActive int64  `json:"last_active"`
+	LastActive FlexibleInt64 `json:"last_active"`
 	ValidIP    string `json:"valid_ip"`
 	Online     bool   `json:"online"`
 	Host       struct {

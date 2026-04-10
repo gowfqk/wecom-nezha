@@ -121,7 +121,7 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 	// 计算在线状态
 	now := time.Now().Unix()
 	for i := range servers {
-		servers[i].Online = now-servers[i].LastActive < 300 // 5分钟内活跃视为在线
+		servers[i].Online = now-int64(servers[i].LastActive) < 300 // 5分钟内活跃视为在线
 	}
 
 	return servers, nil
