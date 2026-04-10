@@ -169,53 +169,41 @@ func verifyEncryptSignature(msgSignature, timestamp, nonce, encryptMsg string) b
 	return fmt.Sprintf("%x", hash) == msgSignature
 }
 
-// decryptMsg 解密消息
+// decryptMsg 解密消息（参考微信官方Python示例）
 func decryptMsg(encryptMsg string) (string, error) {
 	if WecomEncodingAESKey == "" {
 		return "", fmt.Errorf("EncodingAESKey未配置")
 	}
 
-	// Base64 解码
+	// Base64 解码密文
 	encryptedBytes, err := base64.StdEncoding.DecodeString(encryptMsg)
 	if err != nil {
 		return "", fmt.Errorf("Base64解码失败: %v", err)
 	}
 
-	// 解码 AES Key (43字符 -> 32字节)，补齐 Base64 padding
-	aesKeyStr := WecomEncodingAESKey
-	logger.Printf("调试: EncodingAESKey长度=%d, 值前5字符=%q", len(aesKeyStr), aesKeyStr[:5])
-	switch len(aesKeyStr) % 4 {
-	case 2:
-		aesKeyStr += "=="
-	case 3:
-		aesKeyStr += "="
-	}
-	aesKey, err := base64.StdEncoding.DecodeString(aesKeyStr)
+	// 解码 AES Key (43字符 -> 32字节)，加一个'='补齐
+	aesKey, err := base64.StdEncoding.DecodeString(WecomEncodingAESKey + "=")
 	if err != nil {
 		return "", fmt.Errorf("AES Key解码失败: %v", err)
 	}
-	logger.Printf("调试: AES Key解码后长度=%d字节, 密文长度=%d字节", len(aesKey), len(encryptedBytes))
 	if len(aesKey) != 32 {
 		return "", fmt.Errorf("AES Key长度错误: 期望32字节, 实际%d字节", len(aesKey))
 	}
 
-	// AES 解密
+	// AES 解密（IV = AES Key 前16字节，参考微信官方示例）
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return "", fmt.Errorf("创建AES cipher失败: %v", err)
 	}
 
-	blockSize := block.BlockSize()
-	if len(encryptedBytes) < blockSize || len(encryptedBytes)%blockSize != 0 {
-		return "", fmt.Errorf("密文长度无效: %d", len(encryptedBytes))
+	if len(encryptedBytes)%block.BlockSize() != 0 {
+		return "", fmt.Errorf("密文长度不是块大小的整数倍: %d", len(encryptedBytes))
 	}
-	iv := encryptedBytes[:blockSize]
-	encryptedData := encryptedBytes[blockSize:]
 
-	// 使用 CBC 模式解密
-	decrypted := make([]byte, len(encryptedData))
+	iv := aesKey[:16]
+	decrypted := make([]byte, len(encryptedBytes))
 	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(decrypted, encryptedData)
+	mode.CryptBlocks(decrypted, encryptedBytes)
 
 	// 去除 PKCS7 填充（带校验）
 	decrypted, err = pkcs7Unpad(decrypted)
