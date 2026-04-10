@@ -1,5 +1,7 @@
 package main
 
+import "encoding/xml"
+
 type RequestBody struct {
 	Sendkey  string    `json:"sendkey"`
 	Msg      string    `json:"msg"`
@@ -65,13 +67,15 @@ type WecomCallbackRequest struct {
 
 // 企微回调解密后的消息
 type WecomCallbackMessage struct {
-	ToUserName   string
-	FromUserName string
-	CreateTime   int
-	MsgType      string
-	Content      string
-	MsgId        int64
-	AgentID      string
+	XMLName      xml.Name `xml:"xml"`
+	ToUserName   string   `xml:"ToUserName"`
+	FromUserName string   `xml:"FromUserName"`
+	CreateTime   int      `xml:"CreateTime"`
+	MsgType      string   `xml:"MsgType"`
+	Content      string   `xml:"Content"`
+	MsgId        int64    `xml:"MsgId"`
+	AgentID      string   `xml:"AgentID"`
+	Encrypt      string   `xml:"Encrypt"` // 加密模式下的消息内容
 }
 
 // Nezha API 响应

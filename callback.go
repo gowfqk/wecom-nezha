@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -32,19 +35,40 @@ func verifyCallback(res http.ResponseWriter, req *http.Request) {
 	timestamp := req.URL.Query().Get("timestamp")
 	nonce := req.URL.Query().Get("nonce")
 	echostr := req.URL.Query().Get("echostr")
+	msgSignature := req.URL.Query().Get("msg_signature")
 
-	logger.Printf("收到回调验证请求: signature=%s, timestamp=%s, nonce=%s, echostr=%s", signature, timestamp, nonce, echostr)
+	logger.Printf("收到回调验证请求: signature=%s, timestamp=%s, nonce=%s, echostr=%s, msg_signature=%s", 
+		signature, timestamp, nonce, echostr, msgSignature)
 
-	// 验证签名
-	if !verifySignature(signature, timestamp, nonce, WecomToken) {
-		logger.Printf("签名验证失败: expected signature")
-		http.Error(res, "签名验证失败", http.StatusForbidden)
-		return
+	// 判断是否加密模式
+	if msgSignature != "" {
+		// 加密模式
+		decryptedEchostr, err := decryptMsg(echostr)
+		if err != nil {
+			logger.Printf("解密echostr失败: %v", err)
+			http.Error(res, "解密失败", http.StatusForbidden)
+			return
+		}
+		
+		// 验证签名（加密模式用 decrypt_msg）
+		if !verifyEncryptSignature(msgSignature, timestamp, nonce, echostr) {
+			logger.Printf("加密模式签名验证失败")
+			http.Error(res, "签名验证失败", http.StatusForbidden)
+			return
+		}
+		
+		logger.Println("加密模式回调验证成功")
+		res.Write([]byte(decryptedEchostr))
+	} else {
+		// 明文模式
+		if !verifySignature(signature, timestamp, nonce, WecomToken) {
+			logger.Printf("明文模式签名验证失败")
+			http.Error(res, "签名验证失败", http.StatusForbidden)
+			return
+		}
+		logger.Println("明文模式回调验证成功")
+		res.Write([]byte(echostr))
 	}
-
-	logger.Println("回调验证成功")
-	// 返回 echostr
-	res.Write([]byte(echostr))
 }
 
 // handleCallbackMessage 处理接收到的消息
@@ -52,15 +76,10 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 	signature := req.URL.Query().Get("signature")
 	timestamp := req.URL.Query().Get("timestamp")
 	nonce := req.URL.Query().Get("nonce")
+	msgSignature := req.URL.Query().Get("msg_signature")
 
-	logger.Printf("收到回调消息: signature=%s, timestamp=%s, nonce=%s", signature, timestamp, nonce)
-
-	// 验证签名
-	if !verifySignature(signature, timestamp, nonce, WecomToken) {
-		logger.Println("消息签名验证失败")
-		http.Error(res, "签名验证失败", http.StatusForbidden)
-		return
-	}
+	logger.Printf("收到回调消息: signature=%s, timestamp=%s, nonce=%s, msg_signature=%s", 
+		signature, timestamp, nonce, msgSignature)
 
 	// 读取消息体
 	body, err := io.ReadAll(req.Body)
@@ -77,26 +96,128 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s", msg.MsgType, msg.FromUserName, msg.Content)
-
-	// 处理文本消息
-	if msg.MsgType == "text" {
-		response := processUserMessage(msg.Content)
-		logger.Printf("发送回复: %s", response)
-		sendReplyMessage(msg.FromUserName, response)
+	// 判断是否加密模式
+	if msg.Encrypt != "" {
+		// 验证加密模式签名
+		if !verifyEncryptSignature(msgSignature, timestamp, nonce, msg.Encrypt) {
+			logger.Println("加密模式消息签名验证失败")
+			http.Error(res, "签名验证失败", http.StatusForbidden)
+			return
+		}
+		
+		// 解密消息
+		decryptedContent, err := decryptMsg(msg.Encrypt)
+		if err != nil {
+			logger.Printf("解密消息失败: %v", err)
+			return
+		}
+		
+		// 解析解密后的消息
+		var decryptedMsg WecomCallbackMessage
+		if err := xml.Unmarshal([]byte(decryptedContent), &decryptedMsg); err != nil {
+			logger.Printf("解析解密消息失败: %v", err)
+			return
+		}
+		
+		logger.Printf("收到用户消息(解密后): MsgType=%s, FromUser=%s, Content=%s", 
+			decryptedMsg.MsgType, decryptedMsg.FromUserName, decryptedMsg.Content)
+		
+		// 处理文本消息
+		if decryptedMsg.MsgType == "text" {
+			response := processUserMessage(decryptedMsg.Content)
+			logger.Printf("发送回复: %s", response)
+			sendReplyMessage(decryptedMsg.FromUserName, response)
+		}
+	} else {
+		// 明文模式
+		if !verifySignature(signature, timestamp, nonce, WecomToken) {
+			logger.Println("明文模式消息签名验证失败")
+			http.Error(res, "签名验证失败", http.StatusForbidden)
+			return
+		}
+		
+		logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s", 
+			msg.MsgType, msg.FromUserName, msg.Content)
+		
+		// 处理文本消息
+		if msg.MsgType == "text" {
+			response := processUserMessage(msg.Content)
+			logger.Printf("发送回复: %s", response)
+			sendReplyMessage(msg.FromUserName, response)
+		}
 	}
 
 	// 返回成功
 	res.Write([]byte("success"))
 }
 
-// verifySignature 验证签名
+// verifySignature 验证明文签名
 func verifySignature(signature, timestamp, nonce, token string) bool {
 	strs := sort.StringSlice{token, timestamp, nonce}
 	sort.Strings(strs)
 	str := strings.Join(strs, "")
 	hash := sha1.Sum([]byte(str))
 	return fmt.Sprintf("%x", hash) == signature
+}
+
+// verifyEncryptSignature 验证加密模式签名
+func verifyEncryptSignature(msgSignature, timestamp, nonce, encryptMsg string) bool {
+	strs := sort.StringSlice{WecomToken, timestamp, nonce, encryptMsg}
+	sort.Strings(strs)
+	str := strings.Join(strs, "")
+	hash := sha1.Sum([]byte(str))
+	return fmt.Sprintf("%x", hash) == msgSignature
+}
+
+// decryptMsg 解密消息
+func decryptMsg(encryptMsg string) (string, error) {
+	if WecomEncodingAESKey == "" {
+		return "", fmt.Errorf("EncodingAESKey未配置")
+	}
+
+	// Base64 解码
+	encryptedBytes, err := base64.StdEncoding.DecodeString(encryptMsg)
+	if err != nil {
+		return "", fmt.Errorf("Base64解码失败: %v", err)
+	}
+
+	// 解码 AES Key (43字符 -> 32字节)
+	aesKey, err := base64.StdEncoding.DecodeString(WecomEncodingAESKey + "=")
+	if err != nil {
+		return "", fmt.Errorf("AES Key解码失败: %v", err)
+	}
+
+	// AES 解密
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return "", fmt.Errorf("创建AES cipher失败: %v", err)
+	}
+
+	blockSize := block.BlockSize()
+	iv := encryptedBytes[:blockSize]
+	encryptedData := encryptedBytes[blockSize:]
+
+	// 使用 CBC 模式解密
+	decrypted := make([]byte, len(encryptedData))
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(decrypted, encryptedData)
+
+	// 去除 PKCS7 填充
+	decrypted = pkcs7Unpad(decrypted)
+
+	// 格式: random(16) + msg_len(4) + msg + corp_id
+	// 去除前面的16字节随机数和后面的corp_id
+	msgLen := int(decrypted[16])<<24 | int(decrypted[17])<<16 | int(decrypted[18])<<8 | int(decrypted[19])
+	msg := decrypted[20 : 20+msgLen]
+
+	return string(msg), nil
+}
+
+// pkcs7Unpad 去除 PKCS7 填充
+func pkcs7Unpad(data []byte) []byte {
+	length := len(data)
+	unpadding := int(data[length-1])
+	return data[:length-unpadding]
 }
 
 // processUserMessage 处理用户消息，返回回复内容
