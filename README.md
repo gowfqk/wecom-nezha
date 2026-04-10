@@ -40,7 +40,7 @@ services:
       - WECOM_TOUID=@all
       - WECOM_TOKEN=your_callback_token
       - NEZHA_URL=https://nezha.example.com
-      - NEZHA_API_KEY=your_nezha_api_key
+      - NEZHA_TOKEN=your_nezha_token
       - CACHE_TYPE=memory
     restart: unless-stopped
 ```
@@ -55,7 +55,7 @@ docker run -d -p 8080:8080 \
   -e WECOM_AID=your_agentid \
   -e WECOM_TOKEN=your_callback_token \
   -e NEZHA_URL=https://nezha.example.com \
-  -e NEZHA_API_KEY=your_nezha_api_key \
+  -e NEZHA_TOKEN=your_nezha_token \
   -e CACHE_TYPE=memory \
   gowfqk/go-wecomchan:latest
 ```
@@ -188,7 +188,7 @@ go run .
 | `WECOM_TOKEN` | 企业微信回调Token | - |
 | `WECOM_ENCODING_AES_KEY` | 企业微信EncodingAESKey（加密模式） | - |
 | `NEZHA_URL` | 哪吒监控地址 | - |
-| `NEZHA_API_KEY` | 哪吒监控API Key | - |
+| `NEZHA_TOKEN` | 哪吒监控API Token | - |
 | `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis` | `none` |
 | `REDIS_STAT` | Redis 开关：`ON`/`OFF` | `OFF` |
 | `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
