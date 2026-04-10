@@ -104,6 +104,13 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		return nil, err
 	}
 
+	// 调试：打印原始响应（截断到500字符）
+	rawBody := string(body)
+	if len(rawBody) > 500 {
+		rawBody = rawBody[:500]
+	}
+	logger.Printf("调试: 原始API响应: %s...", rawBody)
+
 	if !result.Success {
 		return nil, fmt.Errorf("API错误: %s", result.Error)
 	}
