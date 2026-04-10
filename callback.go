@@ -183,6 +183,7 @@ func decryptMsg(encryptMsg string) (string, error) {
 
 	// 解码 AES Key (43字符 -> 32字节)，补齐 Base64 padding
 	aesKeyStr := WecomEncodingAESKey
+	logger.Printf("调试: EncodingAESKey长度=%d, 值前5字符=%q", len(aesKeyStr), aesKeyStr[:min(5, len(aesKeyStr))])
 	switch len(aesKeyStr) % 4 {
 	case 2:
 		aesKeyStr += "=="
@@ -193,6 +194,7 @@ func decryptMsg(encryptMsg string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("AES Key解码失败: %v", err)
 	}
+	logger.Printf("调试: AES Key解码后长度=%d字节, 密文长度=%d字节", len(aesKey), len(encryptedBytes))
 	if len(aesKey) != 32 {
 		return "", fmt.Errorf("AES Key长度错误: 期望32字节, 实际%d字节", len(aesKey))
 	}
