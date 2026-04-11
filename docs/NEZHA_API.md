@@ -45,6 +45,12 @@
 ### 获取服务器指标
 - **GET** `/server/{id}/metrics`
 - 认证: 无需认证 (common)
+- 参数: `metric` (query, required) - 指标名称: cpu, memory, swap, disk, net_in_speed, net_out_speed, net_in_transfer, net_out_transfer, load1, load5, load15, tcp_conn, udp_conn, process_count, temperature, uptime, gpu
+- 参数: `period` (query, optional) - 时间范围: 1d, 7d, 30d (默认 1d)
+
+### 获取服务器关联服务历史
+- **GET** `/server/{id}/service`
+- 认证: 无需认证 (common)
 
 ### 移动服务器到分组
 - **POST** `/batch-move/server`
@@ -56,7 +62,7 @@
 
 ### 获取服务列表
 - **GET** `/service`
-- 认证: BearerAuth (部分)
+- 认证: common
 
 ### 添加服务
 - **POST** `/service`
@@ -137,6 +143,10 @@
 ### 通知组
 - **GET/POST** `/notification-group`
 - **PATCH** `/notification-group/{id}`
+- 认证: auth required
+
+### 批量删除通知分组
+- **POST** `/batch-delete/notification-group`
 - 认证: auth required
 
 ---
@@ -231,10 +241,6 @@
 - **GET** `/waf`
 - 认证: auth required
 
-### 更新 WAF
-- **PATCH** `/batch-delete/waf`
-- 认证: admin required
-
 ---
 
 ## 文件管理
@@ -247,16 +253,36 @@
 - **GET** `/ws/file/{id}`
 - 认证: auth required
 
+### 服务器文件流
+- **GET** `/ws/server`
+- 认证: common
+
+---
+
+## 终端管理
+
+### 创建 WebSSH 终端
+- **POST** `/terminal`
+- 认证: auth required
+
+### 终端流
+- **GET** `/ws/terminal/{id}`
+- 认证: auth required
+
 ---
 
 ## 服务器分组
 
 ### 分组列表
 - **GET** `/server-group`
+- 认证: common
+
+### 新建分组
+- **POST** `/server-group`
 - 认证: auth required
 
-### 分组操作
-- **POST/PATCH** `/server-group/{id}`
+### 编辑分组
+- **PATCH** `/server-group/{id}`
 - 认证: auth required
 
 ### 批量删除分组
@@ -288,11 +314,16 @@
 - Body: 用户名密码
 
 ### 刷新 Token
-- **POST** `/refresh-token`
+- **GET** `/refresh-token`
+- 认证: auth required
 
 ### OAuth 登录
 - **GET** `/api/v1/oauth2/{provider}`
 - **GET** `/api/v1/oauth2/callback`
+
+### 解除 OAuth 绑定
+- **POST** `/api/v1/oauth2/{provider}/unbind`
+- 认证: auth required
 
 ---
 

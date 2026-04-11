@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -51,8 +52,14 @@ func GetRemoteToken(corpId, appSecret string) string {
 	return accessToken
 }
 
+var redisClient *redis.Client
+var redisOnce sync.Once
+
 func RedisClient() *redis.Client {
-	return redis.NewClient(&redis.Options{Addr: RedisAddr, Password: RedisPassword, DB: 0})
+	redisOnce.Do(func() {
+		redisClient = redis.NewClient(&redis.Options{Addr: RedisAddr, Password: RedisPassword, DB: 0})
+	})
+	return redisClient
 }
 
 func PostMsg(postData JsonData, postUrl string) string {

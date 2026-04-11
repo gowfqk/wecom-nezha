@@ -114,7 +114,7 @@ func (f *FlexibleInt64) UnmarshalJSON(data []byte) error {
 type NezhaServer struct {
 	ID         uint   `json:"id"`
 	Name       string `json:"name"`
-	Tag        string `json:"tag"`
+	Tag        string `json:"note"`         // 哪吒 Server 模型的 note 字段（标签）
 	LastActive   FlexibleInt64 `json:"last_active"`
 	ValidIP      string        `json:"valid_ip"`
 	Note         string        `json:"public_note"`
@@ -126,13 +126,16 @@ type NezhaServer struct {
 		CPU             []string `json:"cpu"`
 		MemTotal        uint64   `json:"mem_total"`
 		DiskTotal       uint64   `json:"disk_total"`
+		SwapTotal       uint64   `json:"swap_total"`
 		Version         string   `json:"version"`
 		BootTime        uint64   `json:"boot_time"`
+		Virtualization  string   `json:"virtualization"`
 	} `json:"host"`
 	State struct {
 		CPU           float64 `json:"cpu"`
 		MemUsed       uint64  `json:"mem_used"`
 		DiskUsed      uint64  `json:"disk_used"`
+		SwapUsed      uint64  `json:"swap_used"`
 		NetInSpeed    float64 `json:"net_in_speed"`
 		NetOutSpeed   float64 `json:"net_out_speed"`
 		NetInTransfer uint64  `json:"net_in_transfer"`
@@ -144,6 +147,8 @@ type NezhaServer struct {
 		TCPConnCount  uint64  `json:"tcp_conn_count"`
 		UDPConnCount  uint64  `json:"udp_conn_count"`
 		ProcessCount  uint64  `json:"process_count"`
+		GPU           []interface{} `json:"gpu"`
+		Temperatures  []interface{} `json:"temperatures"`
 	} `json:"state"`
 }
 

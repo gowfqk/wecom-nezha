@@ -254,8 +254,9 @@
 **请求参数**:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| metric | string | 是 | 指标名称 |
-| period | string | 否 | 时间范围 (1d/7d/30d，默认1d) |
+| id | integer (path) | 是 | 服务器 ID |
+| metric | string (query) | 是 | 指标名称 |
+| period | string (query) | 否 | 时间范围 (1d/7d/30d，默认1d) |
 
 **支持的指标 (metric)**:
 | 指标 | 说明 |
@@ -601,21 +602,26 @@
 
 ### 3.14 OAuth2 登录
 
-#### GET `/oauth2/redirect` — 获取 OAuth2 重定向 URL
+#### GET `/api/v1/oauth2/{provider}` — 获取 OAuth2 重定向 URL
 
 > **权限**: `auth required`
 
+**路径参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| provider | string | OAuth2 提供商 (如 github, google) |
+
 ---
 
-#### GET `/oauth2/callback` — OAuth2 回调
+#### GET `/api/v1/oauth2/callback` — OAuth2 回调
 
-> **权限**: `无`
+> **权限**: 无
 
 处理 OAuth2 提供商（如 GitHub、Google）的回调。
 
 ---
 
-#### DELETE `/oauth2/unbind` — 解除 OAuth2 绑定
+#### POST `/api/v1/oauth2/{provider}/unbind` — 解除 OAuth2 绑定
 
 > **权限**: `auth required`
 
@@ -763,6 +769,14 @@
 #### GET `/ws/file/{id}` — WebSocket 文件流
 
 > **权限**: `auth required`
+
+---
+
+#### GET `/ws/server` — WebSocket 服务器数据流
+
+> **权限**: `common`
+
+实时推送服务器监控数据的 WebSocket 流。
 
 ---
 

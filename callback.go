@@ -220,25 +220,6 @@ func decryptMsg(encryptMsg string) (string, error) {
 	return string(msg), nil
 }
 
-// pkcs7Unpad 去除 PKCS7 填充（带校验）
-func pkcs7Unpad(data []byte) ([]byte, error) {
-	length := len(data)
-	if length == 0 {
-		return nil, fmt.Errorf("数据为空")
-	}
-	unpadding := int(data[length-1])
-	if unpadding <= 0 || unpadding > 16 || unpadding > length {
-		return nil, fmt.Errorf("无效的PKCS7填充: %d", unpadding)
-	}
-	// 校验填充字节是否一致
-	for i := length - unpadding; i < length; i++ {
-		if data[i] != byte(unpadding) {
-			return nil, fmt.Errorf("PKCS7填充校验失败")
-		}
-	}
-	return data[:length-unpadding], nil
-}
-
 // processUserMessage 处理用户消息，返回回复内容
 func processUserMessage(content string) string {
 	content = strings.TrimSpace(content)
