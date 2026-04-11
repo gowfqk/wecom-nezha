@@ -22,8 +22,8 @@ func nezhaRequest(method, url string, body io.Reader) (*http.Response, error) {
 	}
 	if nezhaAccessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
-	}
-	if NezhaBasicAuthUser != "" {
+	} else if NezhaBasicAuthUser != "" {
+		// 只在没有 token 时用 Basic Auth（如登录请求），避免覆盖 Bearer token
 		req.SetBasicAuth(NezhaBasicAuthUser, NezhaBasicAuthPass)
 	}
 	return httpClient.Do(req)
