@@ -448,6 +448,8 @@ func formatServerDetail(server *NezhaServer) string {
 		status = "🔴离线"
 	}
 
+	l1, l5, l15 := getLoad(server)
+
 	return fmt.Sprintf(`服务器: %s
 状态: %s
 IP: %s
@@ -460,7 +462,16 @@ CPU: %.1f%%
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
-		server.State.Load1, server.State.Load5, server.State.Load15)
+		l1, l5, l15)
+}
+
+// getLoad 获取负载值，兼容 load_1 和 load1 两种字段名
+func getLoad(server *NezhaServer) (float64, float64, float64) {
+	l1, l5, l15 := server.State.Load1, server.State.Load5, server.State.Load15
+	if l1 == 0 && l5 == 0 && l15 == 0 {
+		l1, l5, l15 = server.State.Load1Alt, server.State.Load5Alt, server.State.Load15Alt
+	}
+	return l1, l5, l15
 }
 
 // formatServerDetailFull 格式化服务器完整详情
@@ -493,6 +504,8 @@ func formatServerDetailFull(server *NezhaServer) string {
 		agentVer = "未知"
 	}
 
+	l1, l5, l15 := getLoad(server)
+
 	return fmt.Sprintf(`服务器: %s [%s]
 状态: %s | 运行: %s
 系统: %s %s (%s)
@@ -513,7 +526,7 @@ IP: %s
 		float64(server.State.MemUsed)/float64(server.Host.MemTotal)*100,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
 		float64(server.State.DiskUsed)/float64(server.Host.DiskTotal)*100,
-		server.State.Load1, server.State.Load5, server.State.Load15,
+		l1, l5, l15,
 		netIn, netOut, netInTotal, netOutTotal,
 		server.State.TCPConnCount, server.State.UDPConnCount,
 		server.State.ProcessCount,
