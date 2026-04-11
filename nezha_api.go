@@ -12,6 +12,23 @@ import (
 var nezhaAccessToken = ""
 var nezhaTokenExpire time.Time
 
+func nezhaRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if nezhaAccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
+	}
+	if NezhaBasicAuthUser != "" {
+		req.SetBasicAuth(NezhaBasicAuthUser, NezhaBasicAuthPass)
+	}
+	return httpClient.Do(req)
+}
+
 // NezhaLogin 登录获取 Token
 func NezhaLogin() error {
 	if NezhaUrl == "" || NezhaUsername == "" || NezhaPassword == "" {
@@ -34,13 +51,7 @@ func NezhaLogin() error {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return err
 	}
@@ -93,14 +104,7 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 	}
 
 	url := fmt.Sprintf("%s/api/v1/server", strings.TrimRight(NezhaUrl, "/"))
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
-
-	resp, err := httpClient.Do(req)
+	resp, err := nezhaRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +201,7 @@ func GetAgentSecret() (string, error) {
 	}
 
 	url := fmt.Sprintf("%s/api/v1/profile", strings.TrimRight(NezhaUrl, "/"))
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
-
-	resp, err := httpClient.Do(req)
+	resp, err := nezhaRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
@@ -260,14 +258,7 @@ func RebootNezhaServer(serverID uint) error {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
-
-	resp, err := httpClient.Do(req)
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return err
 	}
@@ -299,9 +290,7 @@ func RebootNezhaServer(serverID uint) error {
 	json.Unmarshal(body, &taskResult)
 	if taskResult.Data.ID > 0 {
 		triggerURL := fmt.Sprintf("%s/api/v1/cron/%d/manual", strings.TrimRight(NezhaUrl, "/"), taskResult.Data.ID)
-		triggerReq, _ := http.NewRequest("GET", triggerURL, nil)
-		triggerReq.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
-		httpClient.Do(triggerReq) // 忽略结果，触发即可
+		nezhaRequest("GET", triggerURL, nil) // 忽略结果，触发即可
 	}
 
 	return nil
