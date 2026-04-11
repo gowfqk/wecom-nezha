@@ -153,12 +153,6 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 				servers[i].ValidIP = ip
 			}
 		}
-		// 调试：打印负载值
-		if i == 0 {
-			logger.Printf("调试 state: Load1=%.2f Load5=%.2f Load15=%.2f, Load1Alt=%.2f Load5Alt=%.2f Load15Alt=%.2f",
-				servers[i].State.Load1, servers[i].State.Load5, servers[i].State.Load15,
-				servers[i].State.Load1Alt, servers[i].State.Load5Alt, servers[i].State.Load15Alt)
-		}
 	}
 
 	return servers, nil

@@ -140,9 +140,6 @@ type NezhaServer struct {
 		Load1         float64 `json:"load_1"`
 		Load5         float64 `json:"load_5"`
 		Load15        float64 `json:"load_15"`
-		Load1Alt      float64 `json:"load1"`
-		Load5Alt      float64 `json:"load5"`
-		Load15Alt     float64 `json:"load15"`
 		Uptime        uint64  `json:"uptime"`
 		TCPConnCount  uint64  `json:"tcp_conn_count"`
 		UDPConnCount  uint64  `json:"udp_conn_count"`

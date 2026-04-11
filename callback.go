@@ -465,13 +465,9 @@ CPU: %.1f%%
 		l1, l5, l15)
 }
 
-// getLoad 获取负载值，兼容 load_1 和 load1 两种字段名
+// getLoad 获取负载值
 func getLoad(server *NezhaServer) (float64, float64, float64) {
-	l1, l5, l15 := server.State.Load1, server.State.Load5, server.State.Load15
-	if l1 == 0 && l5 == 0 && l15 == 0 {
-		l1, l5, l15 = server.State.Load1Alt, server.State.Load5Alt, server.State.Load15Alt
-	}
-	return l1, l5, l15
+	return server.State.Load1, server.State.Load5, server.State.Load15
 }
 
 // formatServerDetailFull 格式化服务器完整详情
