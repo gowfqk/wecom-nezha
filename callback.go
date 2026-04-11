@@ -382,7 +382,7 @@ func getAgentInstallCmd(platform string) string {
 
 	switch platform {
 	case "linux":
-		cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=\"%s\" ./nezha.sh",
+		cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/agent/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=*** ./nezha.sh",
 			NezhaUrl, tls, secret)
 		return fmt.Sprintf("Linux 安装命令：\n\n%s\n\n⚠️ 请在目标服务器上以 root 权限执行", cmd)
 	case "windows":
