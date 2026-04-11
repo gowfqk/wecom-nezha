@@ -122,20 +122,28 @@ type NezhaServer struct {
 	Host struct {
 		Platform        string   `json:"platform"`
 		PlatformVersion string   `json:"platform_version"`
-		CPU            []string `json:"cpu"`
-		MemTotal       uint64   `json:"mem_total"`
-		DiskTotal      uint64   `json:"disk_total"`
+		Arch            string   `json:"arch"`
+		CPU             []string `json:"cpu"`
+		MemTotal        uint64   `json:"mem_total"`
+		DiskTotal       uint64   `json:"disk_total"`
+		Version         string   `json:"version"`
+		BootTime        uint64   `json:"boot_time"`
 	} `json:"host"`
 	State struct {
-		CPU         float64 `json:"cpu"`
-		MemUsed     uint64  `json:"mem_used"`
-		DiskUsed    uint64  `json:"disk_used"`
-		NetInSpeed  float64 `json:"net_in_speed"`
-		NetOutSpeed float64 `json:"net_out_speed"`
-		Load1       float64 `json:"load_1"`
-		Load5       float64 `json:"load_5"`
-		Load15      float64 `json:"load_15"`
-		Uptime      uint64  `json:"uptime"`
+		CPU           float64 `json:"cpu"`
+		MemUsed       uint64  `json:"mem_used"`
+		DiskUsed      uint64  `json:"disk_used"`
+		NetInSpeed    float64 `json:"net_in_speed"`
+		NetOutSpeed   float64 `json:"net_out_speed"`
+		NetInTransfer uint64  `json:"net_in_transfer"`
+		NetOutTransfer uint64 `json:"net_out_transfer"`
+		Load1         float64 `json:"load_1"`
+		Load5         float64 `json:"load_5"`
+		Load15        float64 `json:"load_15"`
+		Uptime        uint64  `json:"uptime"`
+		TCPConnCount  uint64  `json:"tcp_conn_count"`
+		UDPConnCount  uint64  `json:"udp_conn_count"`
+		ProcessCount  uint64  `json:"process_count"`
 	} `json:"state"`
 }
 

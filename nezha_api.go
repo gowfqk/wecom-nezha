@@ -214,3 +214,71 @@ func boolToTLS(url string) string {
 	}
 	return "false"
 }
+
+// RebootNezhaServer 通过创建触发任务重启服务器
+func RebootNezhaServer(serverID uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/cron", strings.TrimRight(NezhaUrl, "/"))
+	taskData := map[string]interface{}{
+		"name":        "手动重启",
+		"command":     "reboot",
+		"scheduler":   "@every 1m",
+		"cover":       0,
+		"servers":     []uint{serverID},
+		"task_type":   1, // 触发任务
+	}
+
+	jsonData, err := json.Marshal(taskData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %v", err)
+	}
+	if !result.Success {
+		return fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	// 获取刚创建的任务ID并手动触发
+	var taskResult struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ID uint `json:"id"`
+		} `json:"data"`
+	}
+	json.Unmarshal(body, &taskResult)
+	if taskResult.Data.ID > 0 {
+		triggerURL := fmt.Sprintf("%s/api/v1/cron/%d/manual", strings.TrimRight(NezhaUrl, "/"), taskResult.Data.ID)
+		triggerReq, _ := http.NewRequest("GET", triggerURL, nil)
+		triggerReq.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
+		httpClient.Do(triggerReq) // 忽略结果，触发即可
+	}
+
+	return nil
+}

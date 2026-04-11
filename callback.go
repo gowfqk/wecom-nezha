@@ -250,7 +250,9 @@ func processUserMessage(content string) string {
 - 离线：查看离线服务器列表
 - 列表：查看所有服务器
 - 安装：获取Agent安装命令
-- 服务器名：查看指定服务器详情
+- 详情 服务器名：查看服务器完整信息
+- 重启 服务器名：重启服务器（需确认）
+- 服务器名：快速查看服务器状态
 
 发送任意关键词查询服务器状态`
 	case "状态", "状态查询":
@@ -265,8 +267,9 @@ func processUserMessage(content string) string {
 - 安装 windows：Windows 安装命令
 - 安装 docker：Docker 安装命令`
 	default:
-		// 安装命令带平台参数
 		lower := strings.ToLower(content)
+
+		// 安装命令带平台参数
 		if strings.HasPrefix(lower, "安装 ") || strings.HasPrefix(lower, "安装") {
 			platform := strings.TrimSpace(strings.TrimPrefix(lower, "安装"))
 			if platform == "" {
@@ -277,7 +280,20 @@ func processUserMessage(content string) string {
 			}
 			return getAgentInstallCmd(platform)
 		}
-		// 尝试匹配服务器名
+
+		// 详情命令
+		if strings.HasPrefix(lower, "详情 ") {
+			name := strings.TrimSpace(strings.TrimPrefix(lower, "详情 "))
+			return getServerDetailFull(name)
+		}
+
+		// 重启命令
+		if strings.HasPrefix(lower, "重启 ") {
+			name := strings.TrimSpace(strings.TrimPrefix(lower, "重启 "))
+			return restartServer(name)
+		}
+
+		// 尝试匹配服务器名（快速查看）
 		detail := getServerDetail(content)
 		if strings.Contains(detail, "未找到") {
 			return "未知命令，发送 帮助 查看可用命令"
@@ -425,7 +441,7 @@ func getServerDetail(name string) string {
 	return result
 }
 
-// formatServerDetail 格式化服务器详情
+// formatServerDetail 格式化服务器详情（快速查看）
 func formatServerDetail(server *NezhaServer) string {
 	status := "🟢在线"
 	if !server.Online {
@@ -445,6 +461,165 @@ CPU: %.1f%%
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
 		server.State.Load1, server.State.Load5, server.State.Load15)
+}
+
+// formatServerDetailFull 格式化服务器完整详情
+func formatServerDetailFull(server *NezhaServer) string {
+	status := "🟢在线"
+	if !server.Online {
+		status = "🔴离线"
+	}
+
+	// CPU 型号
+	cpuModel := "未知"
+	if len(server.Host.CPU) > 0 {
+		cpuModel = strings.Join(server.Host.CPU, ", ")
+	}
+
+	// 运行时间
+	uptime := formatDuration(server.State.Uptime)
+
+	// 网速
+	netIn := formatSpeed(server.State.NetInSpeed)
+	netOut := formatSpeed(server.State.NetOutSpeed)
+
+	// 总流量
+	netInTotal := formatBytes(server.State.NetInTransfer)
+	netOutTotal := formatBytes(server.State.NetOutTransfer)
+
+	// Agent 版本
+	agentVer := server.Host.Version
+	if agentVer == "" {
+		agentVer = "未知"
+	}
+
+	return fmt.Sprintf(`服务器: %s [%s]
+状态: %s | 运行: %s
+系统: %s %s (%s)
+CPU: %s
+内存: %d / %d GB (%.1f%%)
+磁盘: %d / %d GB (%.1f%%)
+负载: %.2f / %.2f / %.2f
+网络: ↓%s ↑%s (累计 ↓%s ↑%s)
+连接: TCP %d / UDP %d
+进程: %d
+Agent: %s
+IP: %s
+备注: %s`,
+		server.Name, server.Tag, status, uptime,
+		server.Host.Platform, server.Host.PlatformVersion, server.Host.Arch,
+		cpuModel,
+		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
+		float64(server.State.MemUsed)/float64(server.Host.MemTotal)*100,
+		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
+		float64(server.State.DiskUsed)/float64(server.Host.DiskTotal)*100,
+		server.State.Load1, server.State.Load5, server.State.Load15,
+		netIn, netOut, netInTotal, netOutTotal,
+		server.State.TCPConnCount, server.State.UDPConnCount,
+		server.State.ProcessCount,
+		agentVer,
+		server.ValidIP, summarizeNote(server.Note))
+}
+
+// getServerDetailFull 查找并显示服务器完整详情
+func getServerDetailFull(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "用法: 详情 服务器名"
+	}
+	server, err := GetNezhaServerByName(name)
+	if err != nil {
+		// 模糊匹配
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询失败: %v", err2)
+		}
+		var matched []NezhaServer
+		lowerName := strings.ToLower(name)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", name)
+		}
+		if len(matched) == 1 {
+			return formatServerDetailFull(&matched[0])
+		}
+		result := "找到多个匹配的服务器：\n"
+		for _, m := range matched {
+			result += fmt.Sprintf("- %s\n", m.Name)
+		}
+		result += "\n请用完整名称查看详情"
+		return result
+	}
+	return formatServerDetailFull(server)
+}
+
+// restartServer 重启服务器（通过创建触发任务）
+func restartServer(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "用法: 重启 服务器名"
+	}
+	server, err := GetNezhaServerByName(name)
+	if err != nil {
+		return fmt.Sprintf("未找到服务器: %s", name)
+	}
+	if !server.Online {
+		return fmt.Sprintf("服务器 %s 当前离线，无法重启", server.Name)
+	}
+	err = RebootNezhaServer(server.ID)
+	if err != nil {
+		return fmt.Sprintf("重启 %s 失败: %v", server.Name, err)
+	}
+	return fmt.Sprintf("✅ 已向 %s (%s) 发送重启指令", server.Name, server.ValidIP)
+}
+
+// formatDuration 格式化运行时间
+func formatDuration(seconds uint64) string {
+	if seconds == 0 {
+		return "未知"
+	}
+	days := seconds / 86400
+	hours := (seconds % 86400) / 3600
+	minutes := (seconds % 3600) / 60
+	if days > 0 {
+		return fmt.Sprintf("%d天%d小时%d分", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%d小时%d分", hours, minutes)
+	}
+	return fmt.Sprintf("%d分钟", minutes)
+}
+
+// formatSpeed 格式化网速
+func formatSpeed(bytesPerSec float64) string {
+	if bytesPerSec >= 1024*1024*1024 {
+		return fmt.Sprintf("%.1f GB/s", bytesPerSec/1024/1024/1024)
+	}
+	if bytesPerSec >= 1024*1024 {
+		return fmt.Sprintf("%.1f MB/s", bytesPerSec/1024/1024)
+	}
+	if bytesPerSec >= 1024 {
+		return fmt.Sprintf("%.1f KB/s", bytesPerSec/1024)
+	}
+	return fmt.Sprintf("%.0f B/s", bytesPerSec)
+}
+
+// formatBytes 格式化字节数
+func formatBytes(bytes uint64) string {
+	if bytes >= 1024*1024*1024*1024 {
+		return fmt.Sprintf("%.1f TB", float64(bytes)/1024/1024/1024/1024)
+	}
+	if bytes >= 1024*1024*1024 {
+		return fmt.Sprintf("%.1f GB", float64(bytes)/1024/1024/1024)
+	}
+	if bytes >= 1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(bytes)/1024/1024)
+	}
+	return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
 }
 
 // sendReplyMessage 发送回复消息
