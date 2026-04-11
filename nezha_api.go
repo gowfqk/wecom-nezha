@@ -165,3 +165,55 @@ func GetOfflineServers() ([]NezhaServer, error) {
 
 	return offline, nil
 }
+
+// GetAgentInstallCommand 获取 Agent 安装命令
+func GetAgentInstallCommand() (string, error) {
+	if err := NezhaLogin(); err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/profile", strings.TrimRight(NezhaUrl, "/"))
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+nezhaAccessToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AgentSecret string `json:"agent_secret"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("解析profile失败: %v", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("获取profile失败")
+	}
+	if result.Data.AgentSecret == "" {
+		return "", fmt.Errorf("Agent Secret 为空")
+	}
+
+	cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=\"%s\" ./nezha.sh",
+		NezhaUrl, boolToTLS(NezhaUrl), result.Data.AgentSecret)
+	return cmd, nil
+}
+
+func boolToTLS(url string) string {
+	if strings.HasPrefix(url, "https") {
+		return "true"
+	}
+	return "false"
+}

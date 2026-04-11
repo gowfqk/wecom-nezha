@@ -249,6 +249,7 @@ func processUserMessage(content string) string {
 - 状态：查看服务器在线状态
 - 离线：查看离线服务器列表
 - 列表：查看所有服务器
+- 安装：获取Agent安装命令
 - 服务器名：查看指定服务器详情
 
 发送任意关键词查询服务器状态`
@@ -258,6 +259,8 @@ func processUserMessage(content string) string {
 		return getOfflineServersList()
 	case "列表", "list":
 		return getServerList()
+	case "安装", "agent":
+		return getAgentInstallCmd()
 	default:
 		// 尝试匹配服务器名
 		detail := getServerDetail(content)
@@ -304,6 +307,15 @@ func getOfflineServersList() string {
 		result += fmt.Sprintf("- %s (%s)\n", s.Name, s.ValidIP)
 	}
 	return result
+}
+
+// getAgentInstallCmd 获取 Agent 安装命令
+func getAgentInstallCmd() string {
+	cmd, err := GetAgentInstallCommand()
+	if err != nil {
+		return fmt.Sprintf("获取安装命令失败: %v", err)
+	}
+	return fmt.Sprintf("Agent 安装命令：\n\n%s\n\n⚠️ 请在目标服务器上执行此命令", cmd)
 }
 
 // getServerList 获取服务器列表
