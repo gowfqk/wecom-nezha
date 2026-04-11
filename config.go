@@ -28,7 +28,7 @@ var NezhaBasicAuthUser = GetEnvDefault("NEZHA_BASIC_AUTH_USER", "") // HTTP Basi
 var NezhaBasicAuthPass = GetEnvDefault("NEZHA_BASIC_AUTH_PASS", "") // HTTP Basic Auth 密码（nginx层）
 
 var ctx = context.Background()
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+var httpClient = &http.Client{Timeout: 60 * time.Second}
 var serverReadTimeout = 15 * time.Second
 var serverWriteTimeout = 15 * time.Second
 var serverIdleTimeout = 60 * time.Second
