@@ -389,8 +389,13 @@ func getAgentInstallCmd(platform string) string {
 		return fmt.Sprintf("Windows 安装命令：\n\n"+
 			"1. 下载 Agent：\n"+
 			"   https://github.com/nezhahq/agent/releases/latest\n\n"+
-			"2. 解压后运行：\n"+
-			"   nezha-agent.exe -s %s -p %s", NezhaUrl, secret)
+			"2. 解压后创建 config.yml：\n"+
+			"   server: %s\n"+
+			"   client_secret: %s\n"+
+			"   tls: %s\n\n"+
+			"3. 以管理员身份运行：\n"+
+			"   nezha-agent.exe service install",
+			strings.TrimRight(NezhaUrl, "/"), secret, tls)
 	case "docker":
 		return fmt.Sprintf("Docker 安装命令：\n\n"+
 			"docker run -d \\\n"+
@@ -398,8 +403,11 @@ func getAgentInstallCmd(platform string) string {
 			"  --restart=always \\\n"+
 			"  --net=host \\\n"+
 			"  -v ./nezha-data:/nezha/agent/data \\\n"+
-			"  nezhahq/agent:latest \\\n"+
-			"  -s %s -p %s", NezhaUrl, secret)
+			"  -e NZ_SERVER=%s \\\n"+
+			"  -e NZ_CLIENT_SECRET=%s \\\n"+
+			"  -e NZ_TLS=%s \\\n"+
+			"  nezhahq/agent:latest",
+			strings.TrimRight(NezhaUrl, "/"), secret, tls)
 	default:
 		return fmt.Sprintf("不支持的平台: %s\n支持: linux / windows / docker", platform)
 	}
