@@ -380,22 +380,28 @@ func getAgentInstallCmd(platform string) string {
 		tls = "true"
 	}
 
+	// NZ_SERVER 需要 host:port 格式，去掉协议前缀
+	serverAddr := strings.TrimPrefix(strings.TrimPrefix(NezhaUrl, "https://"), "http://")
+
 	switch platform {
 	case "linux":
-		cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/agent/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=*** ./nezha.sh",
-			NezhaUrl, tls, secret)
+		cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/agent/install.sh -o agent.sh && chmod +x agent.sh && env NZ_SERVER=%s NZ_TLS=%s NZ_CLIENT_SECRET=%s ./agent.sh",
+			serverAddr, tls, secret)
 		return fmt.Sprintf("Linux 安装命令：\n\n%s\n\n⚠️ 请在目标服务器上以 root 权限执行", cmd)
 	case "windows":
-		return fmt.Sprintf("Windows 安装命令：\n\n"+
-			"1. 下载 Agent：\n"+
-			"   https://github.com/nezhahq/agent/releases/latest\n\n"+
-			"2. 解压后创建 config.yml：\n"+
-			"   server: %s\n"+
-			"   client_secret: %s\n"+
-			"   tls: %s\n\n"+
-			"3. 以管理员身份运行：\n"+
-			"   nezha-agent.exe service install",
-			strings.TrimRight(NezhaUrl, "/"), secret, tls)
+		return fmt.Sprintf("Windows 安装命令（PowerShell）：\n\n"+
+			"$env:NZ_SERVER=\"%s\";"+
+			"$env:NZ_TLS=\"%s\";"+
+			"$env:NZ_CLIENT_SECRET=\"%s\"; "+
+			"[Net.ServicePointManager]::SecurityProtocol = "+
+			"[Net.SecurityProtocolType]::Ssl3 -bor "+
+			"[Net.SecurityProtocolType]::Tls -bor "+
+			"[Net.SecurityProtocolType]::Tls11 -bor "+
+			"[Net.SecurityProtocolType]::Tls12;"+
+			"set-ExecutionPolicy RemoteSigned;"+
+			"Invoke-WebRequest https://f.o0oo.cc/s/nezha.ps1 -OutFile C:\\nezha.ps1;"+
+			"powershell.exe C:\\nezha.ps1",
+			serverAddr, tls, secret)
 	case "docker":
 		return fmt.Sprintf("Docker 安装命令：\n\n"+
 			"docker run -d \\\n"+
@@ -407,7 +413,7 @@ func getAgentInstallCmd(platform string) string {
 			"  -e NZ_CLIENT_SECRET=%s \\\n"+
 			"  -e NZ_TLS=%s \\\n"+
 			"  nezhahq/agent:latest",
-			strings.TrimRight(NezhaUrl, "/"), secret, tls)
+			serverAddr, secret, tls)
 	default:
 		return fmt.Sprintf("不支持的平台: %s\n支持: linux / windows / docker", platform)
 	}
