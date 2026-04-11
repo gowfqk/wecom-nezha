@@ -450,11 +450,6 @@ func formatServerDetail(server *NezhaServer) string {
 
 	l1, l5, l15 := getLoad(server)
 
-	loadLine := ""
-	if l1 >= 0 {
-		loadLine = fmt.Sprintf("负载: %.2f / %.2f / %.2f", l1, l5, l15)
-	}
-
 	return fmt.Sprintf(`服务器: %s
 状态: %s
 IP: %s
@@ -462,19 +457,16 @@ IP: %s
 CPU: %.1f%%
 内存: %d / %d GB
 磁盘: %d / %d GB
-%s`,
+负载: %.2f / %.2f / %.2f`,
 		server.Name, status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
-		loadLine)
+		l1, l5, l15)
 }
 
-// getLoad 获取负载值，Windows 返回 -1 表示不支持
+// getLoad 获取负载值
 func getLoad(server *NezhaServer) (float64, float64, float64) {
-	if strings.Contains(strings.ToLower(server.Host.Platform), "windows") {
-		return -1, -1, -1
-	}
 	return server.State.Load1, server.State.Load5, server.State.Load15
 }
 
@@ -510,18 +502,13 @@ func formatServerDetailFull(server *NezhaServer) string {
 
 	l1, l5, l15 := getLoad(server)
 
-	loadLine := ""
-	if l1 >= 0 {
-		loadLine = fmt.Sprintf("负载: %.2f / %.2f / %.2f", l1, l5, l15)
-	}
-
 	return fmt.Sprintf(`服务器: %s [%s]
 状态: %s | 运行: %s
 系统: %s %s (%s)
 CPU: %s
 内存: %d / %d GB (%.1f%%)
 磁盘: %d / %d GB (%.1f%%)
-%s
+负载: %.2f / %.2f / %.2f
 网络: ↓%s ↑%s (累计 ↓%s ↑%s)
 连接: TCP %d / UDP %d
 进程: %d
@@ -535,7 +522,7 @@ IP: %s
 		float64(server.State.MemUsed)/float64(server.Host.MemTotal)*100,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
 		float64(server.State.DiskUsed)/float64(server.Host.DiskTotal)*100,
-		loadLine,
+		l1, l5, l15,
 		netIn, netOut, netInTotal, netOutTotal,
 		server.State.TCPConnCount, server.State.UDPConnCount,
 		server.State.ProcessCount,
