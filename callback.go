@@ -254,9 +254,8 @@ func processUserMessage(content, userID string) string {
 - NAT 添加：分步添加穿透配置
 - NAT 启用/禁用 ID：启用或禁用穿透
 - NAT 删除 ID：删除穿透配置（需确认）
-
-发送任意关键词查询服务器状态
-操作中可回复 确认 或 取消`
+- 备注 服务器名 备注内容：更新服务器备注
+- 确认/取消：通用确认机制`
 	case "状态", "状态查询":
 		return getServerStatusSummary()
 	case "离线":
@@ -283,6 +282,11 @@ func processUserMessage(content, userID string) string {
 		}
 		if strings.HasPrefix(lower, "nat 启用") || strings.HasPrefix(lower, "nat 禁用") {
 			return toggleNatCmd(content)
+		}
+
+		// 备注命令
+		if strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
+			return updateServerNoteCmd(content)
 		}
 
 		// 检查是否有待确认的 NAT 添加步骤
@@ -963,4 +967,55 @@ func toggleNatCmd(content string) string {
 		action = "禁用"
 	}
 	return fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
+}
+
+// updateServerNoteCmd 更新服务器备注
+// 格式: 备注 服务器名 备注内容
+func updateServerNoteCmd(content string) string {
+	// 去掉"备注 "前缀
+	trimmed := strings.TrimSpace(strings.TrimPrefix(content, "备注"))
+	
+	// 用第一个空格分隔服务器名和备注内容
+	// 支持"备注 服务器名 备注内容"格式
+	fields := strings.SplitN(trimmed, " ", 2)
+	if len(fields) < 2 || strings.TrimSpace(fields[1]) == "" {
+		return "用法: 备注 服务器名 备注内容\n如: 备注 安宁三小 主域控服务器"
+	}
+
+	serverName := strings.TrimSpace(fields[0])
+	note := strings.TrimSpace(fields[1])
+
+	// 模糊匹配服务器
+	server, err := GetNezhaServerByName(serverName)
+	if err != nil {
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询服务器失败: %v", err2)
+		}
+		var matched []NezhaServer
+		lowerName := strings.ToLower(serverName)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+				strings.Contains(strings.ToLower(s.Note), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", serverName)
+		}
+		if len(matched) > 1 {
+			result := "找到多个匹配的服务器：\n"
+			for _, m := range matched {
+				result += fmt.Sprintf("- %s\n", m.Name)
+			}
+			return result + "\n请用更精确的名称"
+		}
+		server = &matched[0]
+	}
+
+	err = UpdateServerNote(server.ID, note)
+	if err != nil {
+		return fmt.Sprintf("更新备注失败: %v", err)
+	}
+	return fmt.Sprintf("✅ 已更新 %s 的备注\n备注: %s", server.Name, note)
 }

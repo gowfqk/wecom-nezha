@@ -309,7 +309,38 @@ func RebootNezhaServer(serverID uint, platform string) error {
 	return nil
 }
 
-// GetNatList 获取 NAT 穿透列表
+// UpdateServerNote 更新服务器备注
+func UpdateServerNote(serverID uint, publicNote string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server/%d", strings.TrimRight(NezhaUrl, "/"), serverID)
+	jsonData, _ := json.Marshal(map[string]interface{}{
+		"public_note": publicNote,
+	})
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("更新备注失败: %s", result.Error)
+	}
+
+	return nil
+}
+
 func GetNatList() ([]map[string]interface{}, error) {
 	if err := NezhaLogin(); err != nil {
 		return nil, err
