@@ -242,12 +242,12 @@ func RebootNezhaServer(serverID uint) error {
 
 	url := fmt.Sprintf("%s/api/v1/cron", strings.TrimRight(NezhaUrl, "/"))
 	taskData := map[string]interface{}{
-		"name":        "手动重启",
-		"command":     "reboot",
-		"scheduler":   "@every 1m",
-		"cover":       0,
-		"servers":     []uint{serverID},
-		"task_type":   1, // 触发任务
+		"name":      "手动重启",
+		"command":   "reboot",
+		"scheduler": "@every 1m",
+		"cover":     0,
+		"servers":   []uint{serverID},
+		"task_type": 1, // 触发任务
 	}
 
 	jsonData, err := json.Marshal(taskData)
@@ -255,39 +255,52 @@ func RebootNezhaServer(serverID uint) error {
 		return err
 	}
 
+	logger.Printf("重启: 创建触发任务, serverID=%d", serverID)
 	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
-		return err
+		return fmt.Errorf("创建任务请求失败: %v", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("读取响应失败: %v", err)
 	}
 
-	var result struct {
+	logger.Printf("重启: 创建任务响应 (HTTP %d): %s", resp.StatusCode, string(body))
+
+	var taskResult struct {
 		Success bool   `json:"success"`
 		Error   string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("解析响应失败: %v", err)
-	}
-	if !result.Success {
-		return fmt.Errorf("API错误: %s", result.Error)
-	}
-
-	// 获取刚创建的任务ID并手动触发
-	var taskResult struct {
-		Success bool `json:"success"`
 		Data    struct {
 			ID uint `json:"id"`
 		} `json:"data"`
 	}
-	json.Unmarshal(body, &taskResult)
-	if taskResult.Data.ID > 0 {
-		triggerURL := fmt.Sprintf("%s/api/v1/cron/%d/manual", strings.TrimRight(NezhaUrl, "/"), taskResult.Data.ID)
-		nezhaRequest("GET", triggerURL, nil) // 忽略结果，触发即可
+	if err := json.Unmarshal(body, &taskResult); err != nil {
+		return fmt.Errorf("解析响应失败: %v", err)
+	}
+	if !taskResult.Success {
+		return fmt.Errorf("创建任务失败: %s", taskResult.Error)
+	}
+
+	if taskResult.Data.ID == 0 {
+		return fmt.Errorf("创建任务成功但未返回任务ID")
+	}
+
+	// 手动触发任务
+	triggerURL := fmt.Sprintf("%s/api/v1/cron/%d/manual", strings.TrimRight(NezhaUrl, "/"), taskResult.Data.ID)
+	logger.Printf("重启: 触发任务, taskID=%d, url=%s", taskResult.Data.ID, triggerURL)
+	triggerResp, err := nezhaRequest("GET", triggerURL, nil)
+	if err != nil {
+		return fmt.Errorf("触发任务失败: %v", err)
+	}
+	defer triggerResp.Body.Close()
+
+	triggerBody, _ := io.ReadAll(triggerResp.Body)
+	logger.Printf("重启: 触发响应 (HTTP %d): %s", triggerResp.StatusCode, string(triggerBody))
+
+	if triggerResp.StatusCode != 200 {
+		return fmt.Errorf("触发任务失败 (HTTP %d): %s", triggerResp.StatusCode, string(triggerBody))
 	}
 
 	return nil
