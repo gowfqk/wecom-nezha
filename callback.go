@@ -438,7 +438,7 @@ IP: %s
 CPU: %.1f%%
 内存: %d / %d GB
 磁盘: %d / %d GB
-负载: %.2f / %.2f / %.2f`,
+负载: %s / %s / %s`,
 		server.Name, status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
@@ -446,9 +446,14 @@ CPU: %.1f%%
 		l1, l5, l15)
 }
 
-// getLoad 获取负载值
-func getLoad(server *NezhaServer) (float64, float64, float64) {
-	return server.State.Load1, server.State.Load5, server.State.Load15
+// getLoad 获取负载值，Windows 下无法获取时返回 N/A
+func getLoad(server *NezhaServer) (string, string, string) {
+	l1, l5, l15 := server.State.Load1, server.State.Load5, server.State.Load15
+	isWindows := strings.Contains(strings.ToLower(server.Host.Platform), "windows")
+	if isWindows && l1 == 0 && l5 == 0 && l15 == 0 {
+		return "N/A", "N/A", "N/A"
+	}
+	return fmt.Sprintf("%.2f", l1), fmt.Sprintf("%.2f", l5), fmt.Sprintf("%.2f", l15)
 }
 
 // formatServerDetailFull 格式化服务器完整详情
@@ -489,7 +494,7 @@ func formatServerDetailFull(server *NezhaServer) string {
 CPU: %s
 内存: %d / %d GB (%.1f%%)
 磁盘: %d / %d GB (%.1f%%)
-负载: %.2f / %.2f / %.2f
+负载: %s / %s / %s
 网络: ↓%s ↑%s (累计 ↓%s ↑%s)
 连接: TCP %d / UDP %d
 进程: %d
