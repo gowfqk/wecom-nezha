@@ -115,11 +115,10 @@ type NezhaServer struct {
 	ID         uint   `json:"id"`
 	Name       string `json:"name"`
 	Tag        string `json:"tag"`
-	Note       string `json:"note,omitempty"`
-	PublicNote string `json:"public_note,omitempty"`
-	LastActive FlexibleInt64 `json:"last_active"`
-	ValidIP    string `json:"valid_ip"`
-	Online     bool   `json:"online"`
+	LastActive   FlexibleInt64 `json:"last_active"`
+	ValidIP      string        `json:"valid_ip"`
+	Note         string        `json:"public_note"`
+	Online       bool          `json:"online"`
 	Host struct {
 		Platform        string   `json:"platform"`
 		PlatformVersion string   `json:"platform_version"`

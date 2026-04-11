@@ -5,8 +5,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 )
+
+// extractIPFromName 从服务器名称中提取IP（格式如 "ecs(10.0.0.1)"）
+func extractIPFromName(name string) string {
+	re := regexp.MustCompile(`\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)`)
+	matches := re.FindStringSubmatch(name)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
 
 func GetEnvDefault(key, defVal string) string {
 	val, ex := os.LookupEnv(key)
