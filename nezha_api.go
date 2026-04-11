@@ -309,16 +309,68 @@ func RebootNezhaServer(serverID uint, platform string) error {
 	return nil
 }
 
-// UpdateServerNote 更新服务器备注
+// GetServerByID 获取单个服务器完整信息
+func GetServerByID(serverID uint) (map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server?id=%d", strings.TrimRight(NezhaUrl, "/"), serverID)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("未找到服务器 ID=%d", serverID)
+	}
+
+	return result.Data[0], nil
+}
+
+// UpdateServerNote 更新服务器备注（保留原有字段）
 func UpdateServerNote(serverID uint, publicNote string) error {
 	if err := NezhaLogin(); err != nil {
 		return err
 	}
 
+	// 先读取当前服务器信息
+	server, err := GetServerByID(serverID)
+	if err != nil {
+		return err
+	}
+
+	// 只修改 public_note，保留其他字段
+	server["public_note"] = publicNote
+
+	// 清理不需要提交的字段
+	delete(server, "id")
+	delete(server, "created_at")
+	delete(server, "updated_at")
+	delete(server, "last_active")
+	delete(server, "state")
+	delete(server, "host")
+	delete(server, "geoip")
+
 	url := fmt.Sprintf("%s/api/v1/server/%d", strings.TrimRight(NezhaUrl, "/"), serverID)
-	jsonData, _ := json.Marshal(map[string]interface{}{
-		"public_note": publicNote,
-	})
+	jsonData, _ := json.Marshal(server)
 
 	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {
