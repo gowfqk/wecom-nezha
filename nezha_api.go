@@ -308,3 +308,139 @@ func RebootNezhaServer(serverID uint, platform string) error {
 
 	return nil
 }
+
+// GetNatList 获取 NAT 穿透列表
+func GetNatList() ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/nat", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// AddNat 添加 NAT 穿透配置
+func AddNat(name, domain, host string, serverID uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/nat", strings.TrimRight(NezhaUrl, "/"))
+	natData := map[string]interface{}{
+		"name":      name,
+		"domain":    domain,
+		"host":      host,
+		"server_id": serverID,
+		"enabled":   true,
+	}
+
+	jsonData, err := json.Marshal(natData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("添加NAT失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteNat 删除 NAT 配置
+func DeleteNat(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/nat", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除NAT失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// ToggleNat 启用/禁用 NAT 配置
+func ToggleNat(id uint, enabled bool) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/nat/%d", strings.TrimRight(NezhaUrl, "/"), id)
+	jsonData, _ := json.Marshal(map[string]interface{}{
+		"enabled": enabled,
+	})
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("操作失败: %s", result.Error)
+	}
+
+	return nil
+}

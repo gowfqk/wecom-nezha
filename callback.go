@@ -10,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 // WecomCallbackHandler 处理企微回调验证和消息
@@ -124,7 +126,7 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		
 		// 处理文本消息
 		if decryptedMsg.MsgType == "text" {
-			response := processUserMessage(decryptedMsg.Content)
+			response := processUserMessage(decryptedMsg.Content, decryptedMsg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(decryptedMsg.FromUserName, response)
 		}
@@ -135,13 +137,13 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 			http.Error(res, "签名验证失败", http.StatusForbidden)
 			return
 		}
-		
-		logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s", 
+
+		logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s",
 			msg.MsgType, msg.FromUserName, msg.Content)
-		
+
 		// 处理文本消息
 		if msg.MsgType == "text" {
-			response := processUserMessage(msg.Content)
+			response := processUserMessage(msg.Content, msg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(msg.FromUserName, response)
 		}
@@ -220,9 +222,23 @@ func decryptMsg(encryptMsg string) (string, error) {
 	return string(msg), nil
 }
 
+// pendingAction 待确认操作
+type pendingAction struct {
+	Type string                 // "nat_add", "nat_delete"
+	Data map[string]interface{} // 操作数据
+}
+
+var pendingActions = make(map[string]pendingAction) // userID -> action
+var pendingMutex sync.RWMutex
+
 // processUserMessage 处理用户消息，返回回复内容
-func processUserMessage(content string) string {
+func processUserMessage(content, userID string) string {
 	content = strings.TrimSpace(content)
+
+	// 检查是否有待确认操作
+	if content == "确认" || content == "取消" {
+		return handleConfirmAction(content, userID)
+	}
 
 	switch content {
 	case "帮助", "help", "?":
@@ -234,8 +250,13 @@ func processUserMessage(content string) string {
 - 详情 服务器名：查看服务器完整信息
 - 重启 服务器名：重启服务器（需确认）
 - 服务器名：快速查看服务器状态
+- NAT：查看穿透配置列表
+- NAT 添加：分步添加穿透配置
+- NAT 启用/禁用 ID：启用或禁用穿透
+- NAT 删除 ID：删除穿透配置（需确认）
 
-发送任意关键词查询服务器状态`
+发送任意关键词查询服务器状态
+操作中可回复 确认 或 取消`
 	case "状态", "状态查询":
 		return getServerStatusSummary()
 	case "离线":
@@ -249,6 +270,28 @@ func processUserMessage(content string) string {
 - 安装 docker：Docker 安装命令`
 	default:
 		lower := strings.ToLower(content)
+
+		// NAT 命令
+		if lower == "nat" || lower == "nat 列表" {
+			return getNatList()
+		}
+		if strings.HasPrefix(lower, "nat 添加") {
+			return startNatAdd(userID, content)
+		}
+		if strings.HasPrefix(lower, "nat 删除") {
+			return startNatDelete(userID, content)
+		}
+		if strings.HasPrefix(lower, "nat 启用") || strings.HasPrefix(lower, "nat 禁用") {
+			return toggleNatCmd(content)
+		}
+
+		// 检查是否有待确认的 NAT 添加步骤
+		pendingMutex.RLock()
+		action, hasPending := pendingActions[userID]
+		pendingMutex.RUnlock()
+		if hasPending && action.Type == "nat_add" {
+			return handleNatAddStep(userID, content)
+		}
 
 		// 安装命令带平台参数
 		if strings.HasPrefix(lower, "安装 ") || strings.HasPrefix(lower, "安装") {
@@ -644,4 +687,267 @@ func sendReplyMessage(toUser, content string) {
 	
 	result := PostMsg(postData, url)
 	logger.Printf("发送消息结果: %s", result)
+}
+
+// getNatList 获取 NAT 列表
+func getNatList() string {
+	nats, err := GetNatList()
+	if err != nil {
+		return fmt.Sprintf("获取NAT列表失败: %v", err)
+	}
+	if len(nats) == 0 {
+		return "当前没有NAT穿透配置\n发送 NAT 添加 开始配置"
+	}
+
+	result := "NAT 穿透配置列表：\n"
+	for _, n := range nats {
+		id := uint(n["id"].(float64))
+		name := n["name"].(string)
+		domain := n["domain"].(string)
+		host := n["host"].(string)
+		enabled := n["enabled"].(bool)
+		status := "🟢启用"
+		if !enabled {
+			status = "🔴禁用"
+		}
+		result += fmt.Sprintf("- [%d] %s %s\n  %s → %s\n", id, name, status, domain, host)
+	}
+	result += "\n操作：NAT 启用/禁用 ID | NAT 删除 ID"
+	return result
+}
+
+// startNatAdd 开始分步添加 NAT
+func startNatAdd(userID, content string) string {
+	// 格式: NAT 添加 名称 域名 内网地址:端口 服务器名
+	parts := strings.Fields(content)
+	if len(parts) == 5 {
+		// 一步到位
+		name := parts[1]
+		domain := parts[2]
+		host := parts[3]
+		serverName := parts[4]
+		return confirmNatAdd(userID, name, domain, host, serverName)
+	}
+
+	// 分步引导
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "nat_add",
+		Data: map[string]interface{}{},
+	}
+	pendingMutex.Unlock()
+
+	return "开始添加 NAT 穿透配置：\n\n第 1 步：请输入配置名称\n（如：SSH穿透、Web服务）"
+}
+
+// handleNatAddStep 处理 NAT 添加的分步输入
+func handleNatAddStep(userID, content string) string {
+	pendingMutex.Lock()
+	action := pendingActions[userID]
+	pendingMutex.Unlock()
+
+	data := action.Data
+	step := len(data)
+
+	switch step {
+	case 0: // 输入名称
+		data["name"] = content
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 2 步：请输入外网域名\n（如：ssh.example.com）"
+
+	case 1: // 输入域名
+		data["domain"] = content
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 3 步：请输入内网地址和端口\n（如：192.168.1.100:22）"
+
+	case 2: // 输入内网地址
+		data["host"] = content
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 4 步：请输入关联的服务器名称\n（支持模糊匹配）"
+
+	case 3: // 输入服务器名 → 确认
+		pendingMutex.Lock()
+		delete(pendingActions, userID)
+		pendingMutex.Unlock()
+		return confirmNatAdd(userID,
+			data["name"].(string),
+			data["domain"].(string),
+			data["host"].(string),
+			content)
+	}
+	return "配置异常，请重新发送 NAT 添加"
+}
+
+// confirmNatAdd 确认添加 NAT
+func confirmNatAdd(userID, name, domain, host, serverName string) string {
+	server, err := GetNezhaServerByName(serverName)
+	if err != nil {
+		// 模糊匹配
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询服务器失败: %v", err2)
+		}
+		var matched []NezhaServer
+		lowerName := strings.ToLower(serverName)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s\n请重新发送 NAT 添加", serverName)
+		}
+		if len(matched) > 1 {
+			result := "找到多个匹配的服务器：\n"
+			for _, m := range matched {
+				result += fmt.Sprintf("- %s\n", m.Name)
+			}
+			result += "\n请用更精确的名称重新发送 NAT 添加"
+			return result
+		}
+		server = &matched[0]
+	}
+
+	// 保存待确认操作
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "nat_add",
+		Data: map[string]interface{}{
+			"name":      name,
+			"domain":    domain,
+			"host":      host,
+			"server_id": server.ID,
+			"server":    server.Name,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf(`请确认 NAT 配置：
+名称: %s
+域名: %s
+内网: %s
+服务器: %s
+
+回复 确认 创建，回复 取消 放弃`, name, domain, host, server.Name)
+}
+
+// handleConfirmAction 处理确认/取消操作
+func handleConfirmAction(content, userID string) string {
+	pendingMutex.Lock()
+	action, ok := pendingActions[userID]
+	if ok {
+		delete(pendingActions, userID)
+	}
+	pendingMutex.Unlock()
+
+	if !ok {
+		return "没有待确认的操作"
+	}
+
+	if content == "取消" {
+		return "已取消操作"
+	}
+
+	// 确认
+	switch action.Type {
+	case "nat_add":
+		data := action.Data
+		err := AddNat(
+			data["name"].(string),
+			data["domain"].(string),
+			data["host"].(string),
+			uint(data["server_id"].(float64)),
+		)
+		if err != nil {
+			return fmt.Sprintf("添加NAT失败: %v", err)
+		}
+		return fmt.Sprintf("✅ NAT 配置已创建\n名称: %s\n域名: %s → %s",
+			data["name"], data["domain"], data["host"])
+
+	case "nat_delete":
+		id := uint(action.Data["id"].(float64))
+		name := action.Data["name"].(string)
+		err := DeleteNat(id)
+		if err != nil {
+			return fmt.Sprintf("删除NAT失败: %v", err)
+		}
+		return fmt.Sprintf("✅ NAT 配置已删除: %s", name)
+	}
+
+	return "操作异常"
+}
+
+// startNatDelete 开始删除 NAT（需确认）
+func startNatDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: NAT 删除 ID\n发送 NAT 查看配置列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 NAT 查看配置列表"
+	}
+
+	// 查找配置名称
+	nats, err := GetNatList()
+	if err != nil {
+		return fmt.Sprintf("查询NAT列表失败: %v", err)
+	}
+	var natName string
+	found := false
+	for _, n := range nats {
+		if uint(n["id"].(float64)) == uint(id) {
+			natName = n["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的NAT配置\n发送 NAT 查看列表", id)
+	}
+
+	// 保存待确认
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "nat_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": natName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除 NAT 配置 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, natName)
+}
+
+// toggleNatCmd 启用/禁用 NAT
+func toggleNatCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: NAT 启用 ID / NAT 禁用 ID\n发送 NAT 查看配置列表"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字"
+	}
+
+	enabled := strings.ToLower(parts[1]) == "启用"
+	err = ToggleNat(uint(id), enabled)
+	if err != nil {
+		return fmt.Sprintf("操作失败: %v", err)
+	}
+
+	action := "启用"
+	if !enabled {
+		action = "禁用"
+	}
+	return fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
 }
