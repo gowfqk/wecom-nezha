@@ -490,21 +490,26 @@ func formatServerDetail(server *NezhaServer) string {
 		status = "🔴离线"
 	}
 
-	l1, l5, l15 := getLoad(server)
+	memPct := float64(0)
+	if server.Host.MemTotal > 0 {
+		memPct = float64(server.State.MemUsed) / float64(server.Host.MemTotal) * 100
+	}
+	diskPct := float64(0)
+	if server.Host.DiskTotal > 0 {
+		diskPct = float64(server.State.DiskUsed) / float64(server.Host.DiskTotal) * 100
+	}
 
 	return fmt.Sprintf(`服务器: %s
 状态: %s
 IP: %s
 备注: %s
 CPU: %.1f%%
-内存: %d / %d GB
-磁盘: %d / %d GB
-负载: %s / %s / %s`,
+内存: %d / %d GB (%.1f%%)
+磁盘: %d / %d GB (%.1f%%)`,
 		server.Name, status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
-		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
-		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,
-		l1, l5, l15)
+		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024, memPct,
+		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024, diskPct)
 }
 
 // getLoad 获取负载值，Windows 下无法获取时返回 N/A
