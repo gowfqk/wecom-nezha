@@ -166,8 +166,8 @@ func GetOfflineServers() ([]NezhaServer, error) {
 	return offline, nil
 }
 
-// GetAgentInstallCommand 获取 Agent 安装命令
-func GetAgentInstallCommand() (string, error) {
+// GetAgentSecret 获取 Agent Secret
+func GetAgentSecret() (string, error) {
 	if err := NezhaLogin(); err != nil {
 		return "", err
 	}
@@ -205,10 +205,7 @@ func GetAgentInstallCommand() (string, error) {
 	if result.Data.AgentSecret == "" {
 		return "", fmt.Errorf("Agent Secret 为空")
 	}
-
-	cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=\"%s\" ./nezha.sh",
-		NezhaUrl, boolToTLS(NezhaUrl), result.Data.AgentSecret)
-	return cmd, nil
+	return result.Data.AgentSecret, nil
 }
 
 func boolToTLS(url string) string {

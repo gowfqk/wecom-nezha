@@ -260,8 +260,23 @@ func processUserMessage(content string) string {
 	case "列表", "list":
 		return getServerList()
 	case "安装", "agent":
-		return getAgentInstallCmd()
+		return `安装命令用法：
+- 安装 linux：Linux 一键安装
+- 安装 windows：Windows 安装命令
+- 安装 docker：Docker 安装命令`
 	default:
+		// 安装命令带平台参数
+		lower := strings.ToLower(content)
+		if strings.HasPrefix(lower, "安装 ") || strings.HasPrefix(lower, "安装") {
+			platform := strings.TrimSpace(strings.TrimPrefix(lower, "安装"))
+			if platform == "" {
+				return `安装命令用法：
+- 安装 linux：Linux 一键安装
+- 安装 windows：Windows 安装命令
+- 安装 docker：Docker 安装命令`
+			}
+			return getAgentInstallCmd(platform)
+		}
 		// 尝试匹配服务器名
 		detail := getServerDetail(content)
 		if strings.Contains(detail, "未找到") {
@@ -310,12 +325,40 @@ func getOfflineServersList() string {
 }
 
 // getAgentInstallCmd 获取 Agent 安装命令
-func getAgentInstallCmd() string {
-	cmd, err := GetAgentInstallCommand()
+func getAgentInstallCmd(platform string) string {
+	secret, err := GetAgentSecret()
 	if err != nil {
 		return fmt.Sprintf("获取安装命令失败: %v", err)
 	}
-	return fmt.Sprintf("Agent 安装命令：\n\n%s\n\n⚠️ 请在目标服务器上执行此命令", cmd)
+
+	tls := "false"
+	if strings.HasPrefix(NezhaUrl, "https") {
+		tls = "true"
+	}
+
+	switch platform {
+	case "linux":
+		cmd := fmt.Sprintf("curl -L https://raw.githubusercontent.com/nezhahq/scripts/main/install.sh -o nezha.sh && chmod +x nezha.sh && env NZ_SERVER=\"%s\" NZ_TLS=\"%s\" NZ_CLIENT_SECRET=\"%s\" ./nezha.sh",
+			NezhaUrl, tls, secret)
+		return fmt.Sprintf("Linux 安装命令：\n\n%s\n\n⚠️ 请在目标服务器上以 root 权限执行", cmd)
+	case "windows":
+		return fmt.Sprintf("Windows 安装命令：\n\n"+
+			"1. 下载 Agent：\n"+
+			"   https://github.com/nezhahq/agent/releases/latest\n\n"+
+			"2. 解压后运行：\n"+
+			"   nezha-agent.exe -s %s -p %s", NezhaUrl, secret)
+	case "docker":
+		return fmt.Sprintf("Docker 安装命令：\n\n"+
+			"docker run -d \\\n"+
+			"  --name nezha-agent \\\n"+
+			"  --restart=always \\\n"+
+			"  --net=host \\\n"+
+			"  -v ./nezha-data:/nezha/agent/data \\\n"+
+			"  nezhahq/agent:latest \\\n"+
+			"  -s %s -p %s", NezhaUrl, secret)
+	default:
+		return fmt.Sprintf("不支持的平台: %s\n支持: linux / windows / docker", platform)
+	}
 }
 
 // getServerList 获取服务器列表
