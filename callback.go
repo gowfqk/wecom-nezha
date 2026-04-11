@@ -858,11 +858,18 @@ func handleConfirmAction(content, userID string) string {
 	switch action.Type {
 	case "nat_add":
 		data := action.Data
+		var serverID uint
+		switch v := data["server_id"].(type) {
+		case uint:
+			serverID = v
+		case float64:
+			serverID = uint(v)
+		}
 		err := AddNat(
 			data["name"].(string),
 			data["domain"].(string),
 			data["host"].(string),
-			uint(data["server_id"].(float64)),
+			serverID,
 		)
 		if err != nil {
 			return fmt.Sprintf("添加NAT失败: %v", err)
@@ -871,7 +878,13 @@ func handleConfirmAction(content, userID string) string {
 			data["name"], data["domain"], data["host"])
 
 	case "nat_delete":
-		id := uint(action.Data["id"].(float64))
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
 		name := action.Data["name"].(string)
 		err := DeleteNat(id)
 		if err != nil {
