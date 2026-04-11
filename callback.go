@@ -565,7 +565,7 @@ func restartServer(name string) string {
 	if !server.Online {
 		return fmt.Sprintf("服务器 %s 当前离线，无法重启", server.Name)
 	}
-	err = RebootNezhaServer(server.ID)
+	err = RebootNezhaServer(server.ID, server.Host.Platform)
 	if err != nil {
 		return fmt.Sprintf("重启 %s 失败: %v", server.Name, err)
 	}

@@ -235,15 +235,20 @@ func boolToTLS(url string) string {
 }
 
 // RebootNezhaServer 通过创建触发任务重启服务器
-func RebootNezhaServer(serverID uint) error {
+func RebootNezhaServer(serverID uint, platform string) error {
 	if err := NezhaLogin(); err != nil {
 		return err
+	}
+
+	command := "reboot"
+	if strings.Contains(strings.ToLower(platform), "windows") {
+		command = "shutdown /r /t 0"
 	}
 
 	url := fmt.Sprintf("%s/api/v1/cron", strings.TrimRight(NezhaUrl, "/"))
 	taskData := map[string]interface{}{
 		"name":      "手动重启",
-		"command":   "reboot",
+		"command":   command,
 		"scheduler": "@every 1m",
 		"cover":     0,
 		"servers":   []uint{serverID},
