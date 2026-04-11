@@ -385,7 +385,7 @@ CPU: %.1f%%
 内存: %d / %d GB
 磁盘: %d / %d GB
 负载: %.2f / %.2f / %.2f`,
-		server.Name, status, server.ValidIP, server.Note,
+		server.Name, status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024,

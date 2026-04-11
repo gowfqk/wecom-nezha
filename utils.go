@@ -19,6 +19,39 @@ func extractIPFromName(name string) string {
 	return ""
 }
 
+// summarizeNote 解析 public_note，JSON 格式显示摘要，否则原样返回
+func summarizeNote(note string) string {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return ""
+	}
+	// 尝试解析为 JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(note), &data); err != nil {
+		return note // 非 JSON，原样返回
+	}
+	var parts []string
+	// 提取 billingDataMod
+	if billing, ok := data["billingDataMod"].(map[string]interface{}); ok {
+		if cycle, ok := billing["cycle"].(string); ok && cycle != "" {
+			parts = append(parts, cycle)
+		}
+		if amount, ok := billing["amount"].(string); ok && amount != "" {
+			parts = append(parts, "¥"+amount)
+		}
+	}
+	// 提取 planDataMod
+	if plan, ok := data["planDataMod"].(map[string]interface{}); ok {
+		if bw, ok := plan["bandwidth"].(string); ok && bw != "" {
+			parts = append(parts, bw+"Mbps")
+		}
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, " / ")
+	}
+	return "有备注"
+}
+
 func GetEnvDefault(key, defVal string) string {
 	val, ex := os.LookupEnv(key)
 	if !ex {
