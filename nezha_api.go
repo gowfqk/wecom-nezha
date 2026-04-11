@@ -51,9 +51,21 @@ func NezhaLogin() error {
 		return err
 	}
 
+	if resp.StatusCode != 200 {
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return fmt.Errorf("登录失败（HTTP %d）: %s", resp.StatusCode, raw)
+	}
+
 	var result NezhaLoginResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return err
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return fmt.Errorf("登录响应解析失败: %s", raw)
 	}
 
 	if !result.Success {
@@ -99,9 +111,21 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		return nil, err
 	}
 
+	if resp.StatusCode != 200 {
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return nil, fmt.Errorf("API请求失败（HTTP %d）: %s", resp.StatusCode, raw)
+	}
+
 	var result NezhaAPIResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return nil, fmt.Errorf("JSON解析失败: %s", raw)
 	}
 
 	if !result.Success {
