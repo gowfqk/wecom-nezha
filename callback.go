@@ -510,17 +510,18 @@ func formatServerDetail(server *NezhaServer) string {
 	}
 
 	return fmt.Sprintf(`服务器: %s
-标签: %s
 状态: %s
 IP: %s
 备注: %s
 CPU: %.1f%%
 内存: %d / %d GB (%.1f%%)
-磁盘: %d / %d GB (%.1f%%)`,
-		server.Name, summarizeTag(server.Tag), status, server.ValidIP, summarizeNote(server.Note),
+磁盘: %d / %d GB (%.1f%%)
+标签: %s`,
+		server.Name, status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024, memPct,
-		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024, diskPct)
+		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024, diskPct,
+		summarizeTag(server.Tag))
 }
 
 // getLoad 获取负载值，Windows 下无法获取时返回 N/A
@@ -566,7 +567,6 @@ func formatServerDetailFull(server *NezhaServer) string {
 	l1, l5, l15 := getLoad(server)
 
 	return fmt.Sprintf(`服务器: %s
-标签: %s
 状态: %s | 运行: %s
 系统: %s %s (%s)
 CPU: %s
@@ -578,8 +578,9 @@ CPU: %s
 进程: %d
 Agent: %s
 IP: %s
-备注: %s`,
-		server.Name, summarizeTag(server.Tag), status, uptime,
+备注: %s
+标签: %s`,
+		server.Name, status, uptime,
 		server.Host.Platform, server.Host.PlatformVersion, server.Host.Arch,
 		cpuModel,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,
@@ -591,7 +592,7 @@ IP: %s
 		server.State.TCPConnCount, server.State.UDPConnCount,
 		server.State.ProcessCount,
 		agentVer,
-		server.ValidIP, summarizeNote(server.Note))
+		server.ValidIP, summarizeNote(server.Note), summarizeTag(server.Tag))
 }
 
 // getServerDetailFull 查找并显示服务器完整详情
