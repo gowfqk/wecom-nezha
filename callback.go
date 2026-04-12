@@ -382,6 +382,15 @@ func getAgentInstallCmd(platform string) string {
 
 	// NZ_SERVER 需要 host:port 格式，去掉协议前缀
 	serverAddr := strings.TrimPrefix(strings.TrimPrefix(NezhaUrl, "https://"), "http://")
+	
+	// 如果没有指定端口，根据协议添加默认端口
+	if !strings.Contains(serverAddr, ":") {
+		if strings.HasPrefix(NezhaUrl, "https") {
+			serverAddr += ":443"
+		} else if strings.HasPrefix(NezhaUrl, "http") {
+			serverAddr += ":80"
+		}
+	}
 
 	switch platform {
 	case "linux":
