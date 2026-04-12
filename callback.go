@@ -441,7 +441,7 @@ func getServerList() string {
 		if !s.Online {
 			status = "🔴离线"
 		}
-		result += fmt.Sprintf("- %s %s\n", s.Name, status)
+		result += fmt.Sprintf("- %s %s %s\n", s.Name, summarizeTag(s.Tag), status)
 	}
 	return result
 }
@@ -486,7 +486,7 @@ func getServerDetail(name string) string {
 		if !m.Online {
 			status = "🔴离线"
 		}
-		result += fmt.Sprintf("- %s %s\n", m.Name, status)
+		result += fmt.Sprintf("- %s %s %s\n", m.Name, summarizeTag(m.Tag), status)
 	}
 	result += "\n回复服务器名称查看详情"
 	return result
@@ -509,13 +509,14 @@ func formatServerDetail(server *NezhaServer) string {
 	}
 
 	return fmt.Sprintf(`服务器: %s
+标签: %s
 状态: %s
 IP: %s
 备注: %s
 CPU: %.1f%%
 内存: %d / %d GB (%.1f%%)
 磁盘: %d / %d GB (%.1f%%)`,
-		server.Name, status, server.ValidIP, summarizeNote(server.Note),
+		server.Name, summarizeTag(server.Tag), status, server.ValidIP, summarizeNote(server.Note),
 		server.State.CPU,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024, memPct,
 		server.State.DiskUsed/1024/1024/1024, server.Host.DiskTotal/1024/1024/1024, diskPct)
@@ -563,7 +564,8 @@ func formatServerDetailFull(server *NezhaServer) string {
 
 	l1, l5, l15 := getLoad(server)
 
-	return fmt.Sprintf(`服务器: %s [%s]
+	return fmt.Sprintf(`服务器: %s
+标签: %s
 状态: %s | 运行: %s
 系统: %s %s (%s)
 CPU: %s
@@ -576,7 +578,7 @@ CPU: %s
 Agent: %s
 IP: %s
 备注: %s`,
-		server.Name, server.Tag, status, uptime,
+		server.Name, summarizeTag(server.Tag), status, uptime,
 		server.Host.Platform, server.Host.PlatformVersion, server.Host.Arch,
 		cpuModel,
 		server.State.MemUsed/1024/1024/1024, server.Host.MemTotal/1024/1024/1024,

@@ -19,6 +19,15 @@ func extractIPFromName(name string) string {
 	return ""
 }
 
+// summarizeTag 处理标签显示，空标签显示"无"
+func summarizeTag(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return "无"
+	}
+	return tag
+}
+
 // summarizeNote 解析 public_note，JSON 格式显示摘要，否则原样返回
 func summarizeNote(note string) string {
 	note = strings.TrimSpace(note)
