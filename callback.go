@@ -254,7 +254,7 @@ func processUserMessage(content, userID string) string {
 - NAT 添加：分步添加穿透配置
 - NAT 启用/禁用 ID：启用或禁用穿透
 - NAT 删除 ID：删除穿透配置（需确认）
-- 备注 服务器名 备注内容：更新服务器备注
+- 标签 服务器名 标签内容：更新服务器私有备注/标签
 - 确认/取消：通用确认机制`
 	case "状态", "状态查询":
 		return getServerStatusSummary()
@@ -284,8 +284,9 @@ func processUserMessage(content, userID string) string {
 			return toggleNatCmd(content)
 		}
 
-		// 备注命令
-		if strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
+		// 标签/备注命令
+		if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签\t") ||
+			strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
 			return updateServerNoteCmd(content)
 		}
 
@@ -999,17 +1000,25 @@ func toggleNatCmd(content string) string {
 	return fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
 }
 
-// updateServerNoteCmd 更新服务器备注
-// 格式: 备注 服务器名 备注内容
+// updateServerNoteCmd 更新服务器私有备注/标签
+// 格式: 标签 服务器名 标签内容 或 备注 服务器名 标签内容
 func updateServerNoteCmd(content string) string {
-	// 去掉"备注 "前缀
-	trimmed := strings.TrimSpace(strings.TrimPrefix(content, "备注"))
+	lower := strings.ToLower(content)
+	var trimmed string
 	
-	// 用第一个空格分隔服务器名和备注内容
-	// 支持"备注 服务器名 备注内容"格式
+	// 处理"标签"或"备注"前缀
+	if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签\t") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(content, "标签"))
+	} else if strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(content, "备注"))
+	} else {
+		return "用法: 标签 服务器名 标签内容\n如: 标签 安宁三小 主域控"
+	}
+	
+	// 用第一个空格分隔服务器名和标签内容
 	fields := strings.SplitN(trimmed, " ", 2)
 	if len(fields) < 2 || strings.TrimSpace(fields[1]) == "" {
-		return "用法: 备注 服务器名 备注内容\n如: 备注 安宁三小 主域控服务器"
+		return "用法: 标签 服务器名 标签内容\n如: 标签 安宁三小 主域控"
 	}
 
 	serverName := strings.TrimSpace(fields[0])
@@ -1043,9 +1052,9 @@ func updateServerNoteCmd(content string) string {
 		server = &matched[0]
 	}
 
-	err = UpdateServerNote(server.ID, note)
+	err = UpdateServerTag(server.ID, note)
 	if err != nil {
-		return fmt.Sprintf("更新备注失败: %v", err)
+		return fmt.Sprintf("更新标签失败: %v", err)
 	}
-	return fmt.Sprintf("✅ 已更新 %s 的备注\n备注: %s", server.Name, note)
+	return fmt.Sprintf("✅ 已更新 %s 的标签\n标签: %s", server.Name, note)
 }

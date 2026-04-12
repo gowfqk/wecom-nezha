@@ -393,6 +393,54 @@ func UpdateServerNote(serverID uint, publicNote string) error {
 	return nil
 }
 
+// UpdateServerTag 更新服务器私有备注/标签（保留原有字段）
+func UpdateServerTag(serverID uint, tag string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	// 先读取当前服务器信息
+	server, err := GetServerByID(serverID)
+	if err != nil {
+		return err
+	}
+
+	// 只修改 note 字段（私有备注/标签），保留其他字段
+	server["note"] = tag
+
+	// 清理不需要提交的字段
+	delete(server, "id")
+	delete(server, "created_at")
+	delete(server, "updated_at")
+	delete(server, "last_active")
+	delete(server, "state")
+	delete(server, "host")
+	delete(server, "geoip")
+
+	url := fmt.Sprintf("%s/api/v1/server/%d", strings.TrimRight(NezhaUrl, "/"), serverID)
+	jsonData, _ := json.Marshal(server)
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("更新标签失败: %s", result.Error)
+	}
+
+	return nil
+}
+
 func GetNatList() ([]map[string]interface{}, error) {
 	if err := NezhaLogin(); err != nil {
 		return nil, err
