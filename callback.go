@@ -13,7 +13,41 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+// processedMsgIDs 已处理的消息ID缓存，防止重复处理
+var processedMsgIDs = struct {
+	sync.RWMutex
+	ids map[int64]time.Time
+}{ids: make(map[int64]time.Time)}
+
+// isMsgProcessed 检查消息是否已处理
+func isMsgProcessed(msgID int64) bool {
+	processedMsgIDs.RLock()
+	_, exists := processedMsgIDs.ids[msgID]
+	processedMsgIDs.RUnlock()
+	return exists
+}
+
+// markMsgProcessed 标记消息为已处理
+func markMsgProcessed(msgID int64) {
+	processedMsgIDs.Lock()
+	processedMsgIDs.ids[msgID] = time.Now()
+	processedMsgIDs.Unlock()
+	
+	// 清理超过5分钟的旧记录
+	go func() {
+		time.Sleep(5 * time.Minute)
+		processedMsgIDs.Lock()
+		for id, t := range processedMsgIDs.ids {
+			if time.Since(t) > 5*time.Minute {
+				delete(processedMsgIDs.ids, id)
+			}
+		}
+		processedMsgIDs.Unlock()
+	}()
+}
 
 // WecomCallbackHandler 处理企微回调验证和消息
 func WecomCallbackHandler(res http.ResponseWriter, req *http.Request) {
@@ -124,8 +158,20 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		logger.Printf("收到用户消息(解密后): MsgType=%s, FromUser=%s, Content=%s", 
 			decryptedMsg.MsgType, decryptedMsg.FromUserName, decryptedMsg.Content)
 		
+		// 检查消息是否已处理
+		if decryptedMsg.MsgId > 0 && isMsgProcessed(decryptedMsg.MsgId) {
+			logger.Printf("消息 %d 已处理，跳过", decryptedMsg.MsgId)
+			res.Write([]byte("success"))
+			return
+		}
+		
 		// 处理文本消息
 		if decryptedMsg.MsgType == "text" {
+			// 标记消息为已处理
+			if decryptedMsg.MsgId > 0 {
+				markMsgProcessed(decryptedMsg.MsgId)
+			}
+			
 			response := processUserMessage(decryptedMsg.Content, decryptedMsg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(decryptedMsg.FromUserName, response)
@@ -141,8 +187,20 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 		logger.Printf("收到用户消息: MsgType=%s, FromUser=%s, Content=%s",
 			msg.MsgType, msg.FromUserName, msg.Content)
 
+		// 检查消息是否已处理
+		if msg.MsgId > 0 && isMsgProcessed(msg.MsgId) {
+			logger.Printf("消息 %d 已处理，跳过", msg.MsgId)
+			res.Write([]byte("success"))
+			return
+		}
+		
 		// 处理文本消息
 		if msg.MsgType == "text" {
+			// 标记消息为已处理
+			if msg.MsgId > 0 {
+				markMsgProcessed(msg.MsgId)
+			}
+			
 			response := processUserMessage(msg.Content, msg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(msg.FromUserName, response)
