@@ -544,6 +544,38 @@ func DeleteNat(id uint) error {
 	return nil
 }
 
+// UpdateNat 更新 NAT 配置的内网地址和端口
+func UpdateNat(id uint, host string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/nat/%d", strings.TrimRight(NezhaUrl, "/"), id)
+	jsonData, _ := json.Marshal(map[string]interface{}{
+		"host": host,
+	})
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("更新NAT失败: %s", result.Error)
+	}
+
+	return nil
+}
+
 // ToggleNat 启用/禁用 NAT 配置
 func ToggleNat(id uint, enabled bool) error {
 	if err := NezhaLogin(); err != nil {

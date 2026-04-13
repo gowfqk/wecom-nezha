@@ -312,6 +312,7 @@ func processUserMessage(content, userID string) string {
 - NAT 添加：分步添加穿透配置
 - NAT 启用/禁用 ID：启用或禁用穿透
 - NAT 删除 ID：删除穿透配置（需确认）
+- NAT 修改 ID 内网地址:端口：修改穿透配置
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
 - 确认/取消：通用确认机制`
 	case "状态", "状态查询":
@@ -340,6 +341,9 @@ func processUserMessage(content, userID string) string {
 		}
 		if strings.HasPrefix(lower, "nat 启用") || strings.HasPrefix(lower, "nat 禁用") {
 			return toggleNatCmd(content)
+		}
+		if strings.HasPrefix(lower, "nat 修改") {
+			return updateNatCmd(content)
 		}
 
 		// 标签/备注命令
@@ -1124,6 +1128,37 @@ func toggleNatCmd(content string) string {
 		action = "禁用"
 	}
 	return fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
+}
+
+// updateNatCmd 修改 NAT 配置的内网地址和端口
+// 格式: NAT 修改 ID 内网地址:端口
+func updateNatCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 4 {
+		return "用法: NAT 修改 ID 内网地址:端口\n如: NAT 修改 1 192.168.1.100:8080\n发送 NAT 查看配置列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 NAT 查看配置列表"
+	}
+
+	host := strings.TrimSpace(parts[3])
+	if host == "" {
+		return "内网地址不能为空\n用法: NAT 修改 ID 内网地址:端口"
+	}
+
+	// 验证格式是否包含端口
+	if !strings.Contains(host, ":") {
+		return "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080"
+	}
+
+	err = UpdateNat(uint(id), host)
+	if err != nil {
+		return fmt.Sprintf("修改失败: %v", err)
+	}
+
+	return fmt.Sprintf("✅ NAT [%d] 已更新\n新地址: %s", id, host)
 }
 
 // updateServerNoteCmd 更新服务器私有备注/标签
