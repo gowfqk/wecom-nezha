@@ -319,7 +319,7 @@ func processUserMessage(content, userID string) string {
 		// 重启命令
 		if strings.HasPrefix(lower, "重启 ") {
 			name := strings.TrimSpace(strings.TrimPrefix(lower, "重启 "))
-			return restartServer(name)
+			return restartServer(name, userID)
 		}
 
 		// 尝试匹配服务器名（快速查看）
@@ -632,23 +632,74 @@ func getServerDetailFull(name string) string {
 }
 
 // restartServer 重启服务器（通过创建触发任务）
-func restartServer(name string) string {
+func restartServer(name, userID string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "用法: 重启 服务器名"
 	}
+	
+	// 先尝试精确匹配
 	server, err := GetNezhaServerByName(name)
 	if err != nil {
-		return fmt.Sprintf("未找到服务器: %s", name)
+		// 模糊匹配：同时匹配 Name、Note、Tag
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询服务器失败: %v", err2)
+		}
+		
+		var matched []NezhaServer
+		lowerName := strings.ToLower(name)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+				strings.Contains(strings.ToLower(s.Note), lowerName) ||
+				strings.Contains(strings.ToLower(s.Tag), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", name)
+		}
+		if len(matched) > 1 {
+			result := "找到多个匹配的服务器：\n"
+			for _, m := range matched {
+				status := "🟢在线"
+				if !m.Online {
+					status = "🔴离线"
+				}
+				result += fmt.Sprintf("- %s %s %s\n", m.Name, summarizeTag(m.Tag), status)
+			}
+			result += "\n请用更精确的名称"
+			return result
+		}
+		server = &matched[0]
 	}
+	
 	if !server.Online {
 		return fmt.Sprintf("服务器 %s 当前离线，无法重启", server.Name)
 	}
-	err = RebootNezhaServer(server.ID, server.Host.Platform)
-	if err != nil {
-		return fmt.Sprintf("重启 %s 失败: %v", server.Name, err)
+	
+	// 需要确认 - 保存待确认操作
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "restart",
+		Data: map[string]interface{}{
+			"server_id": server.ID,
+			"server":    server.Name,
+			"platform":  server.Host.Platform,
+		},
 	}
-	return fmt.Sprintf("✅ 已向 %s (%s) 发送重启指令", server.Name, server.ValidIP)
+	pendingMutex.Unlock()
+	
+	return fmt.Sprintf(`确定要重启服务器吗？
+服务器: %s
+标签: %s
+IP: %s
+状态: 🟢在线
+
+⚠️ 重启将导致服务器短暂中断
+回复 确认 重启，回复 取消 放弃`,
+		server.Name, summarizeTag(server.Tag), server.ValidIP)
 }
 
 // formatDuration 格式化运行时间
@@ -927,6 +978,22 @@ func handleConfirmAction(content, userID string) string {
 			return fmt.Sprintf("删除NAT失败: %v", err)
 		}
 		return fmt.Sprintf("✅ NAT 配置已删除: %s", name)
+	
+	case "restart":
+		var serverID uint
+		switch v := action.Data["server_id"].(type) {
+		case uint:
+			serverID = v
+		case float64:
+			serverID = uint(v)
+		}
+		serverName := action.Data["server"].(string)
+		platform := action.Data["platform"].(string)
+		err := RebootNezhaServer(serverID, platform)
+		if err != nil {
+			return fmt.Sprintf("重启 %s 失败: %v", serverName, err)
+		}
+		return fmt.Sprintf("✅ 已向 %s 发送重启指令", serverName)
 	}
 
 	return "操作异常"
