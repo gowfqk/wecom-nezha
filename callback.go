@@ -312,7 +312,8 @@ func processUserMessage(content, userID string) string {
 - NAT 添加：分步添加穿透配置
 - NAT 启用/禁用 ID：启用或禁用穿透
 - NAT 删除 ID：删除穿透配置（需确认）
-- NAT 修改 ID 内网地址:端口：修改穿透配置
+- NAT 修改 ID 内网地址:端口 [服务器名]：修改穿透配置（地址和/或服务器）
+- NAT 修改 ID - 服务器名：只修改服务器
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
 - 确认/取消：通用确认机制`
 	case "状态", "状态查询":
@@ -859,9 +860,18 @@ func getNatList() string {
 		if !enabled {
 			status = "🔴禁用"
 		}
-		result += fmt.Sprintf("- [%d] %s %s\n  %s → %s\n", id, name, status, domain, host)
+		// 获取服务器ID
+		serverID := uint(0)
+		if sid, ok := n["server_id"]; ok && sid != nil {
+			serverID = uint(sid.(float64))
+		}
+		serverInfo := ""
+		if serverID > 0 {
+			serverInfo = fmt.Sprintf(" → 服务器:%d", serverID)
+		}
+		result += fmt.Sprintf("- [%d] %s %s%s\n  %s → %s\n", id, name, status, serverInfo, domain, host)
 	}
-	result += "\n操作：NAT 启用/禁用 ID | NAT 删除 ID"
+	result += "\n操作：NAT 启用/禁用 ID | NAT 删除 ID | NAT 修改 ID 内网地址:端口 [服务器名]"
 	return result
 }
 
@@ -1130,12 +1140,18 @@ func toggleNatCmd(content string) string {
 	return fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
 }
 
-// updateNatCmd 修改 NAT 配置的内网地址和端口
-// 格式: NAT 修改 ID 内网地址:端口
+// updateNatCmd 修改 NAT 配置（内网地址和/或服务器）
+// 格式: 
+//   NAT 修改 ID 内网地址:端口 [服务器名]
+//   NAT 修改 ID - 服务器名  (只改服务器，不改地址)
 func updateNatCmd(content string) string {
 	parts := strings.Fields(content)
 	if len(parts) < 4 {
-		return "用法: NAT 修改 ID 内网地址:端口\n如: NAT 修改 1 192.168.1.100:8080\n发送 NAT 查看配置列表和ID"
+		return "用法: NAT 修改 ID 内网地址:端口 [服务器名]\n" +
+			"     NAT 修改 ID - 服务器名  (只改服务器)\n" +
+			"如: NAT 修改 1 192.168.1.100:8080\n" +
+			"    NAT 修改 1 - 安宁三小\n" +
+			"发送 NAT 查看配置列表和ID"
 	}
 
 	id, err := strconv.Atoi(parts[2])
@@ -1143,22 +1159,93 @@ func updateNatCmd(content string) string {
 		return "ID 无效，请输入数字\n发送 NAT 查看配置列表"
 	}
 
-	host := strings.TrimSpace(parts[3])
-	if host == "" {
-		return "内网地址不能为空\n用法: NAT 修改 ID 内网地址:端口"
+	var host string
+	var serverID uint
+
+	// 判断是只改服务器还是改地址+服务器
+	if parts[3] == "-" {
+		// 只改服务器: NAT 修改 ID - 服务器名
+		if len(parts) < 5 {
+			return "请提供服务器名\n用法: NAT 修改 ID - 服务器名"
+		}
+		serverName := strings.TrimSpace(parts[4])
+		server, serr := GetNezhaServerByName(serverName)
+		if serr != nil {
+			// 模糊匹配
+			servers, _ := GetNezhaServerList()
+			lowerName := strings.ToLower(serverName)
+			var matched []NezhaServer
+			for _, s := range servers {
+				if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+					strings.Contains(strings.ToLower(s.Note), lowerName) ||
+					strings.Contains(strings.ToLower(s.Tag), lowerName) {
+					matched = append(matched, s)
+				}
+			}
+			if len(matched) == 0 {
+				return fmt.Sprintf("未找到服务器: %s", serverName)
+			}
+			if len(matched) > 1 {
+				result := "找到多个匹配的服务器，请使用更精确的名称：\n"
+				for _, m := range matched {
+					result += fmt.Sprintf("- %s %s\n", m.Name, summarizeTag(m.Tag))
+				}
+				return result
+			}
+			server = &matched[0]
+		}
+		serverID = server.ID
+	} else {
+		// 改地址，可选改服务器
+		host = strings.TrimSpace(parts[3])
+		if !strings.Contains(host, ":") {
+			return "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080"
+		}
+
+		// 如果还有第5个参数，是服务器名
+		if len(parts) >= 5 {
+			serverName := strings.TrimSpace(parts[4])
+			server, serr := GetNezhaServerByName(serverName)
+			if serr != nil {
+				servers, _ := GetNezhaServerList()
+				lowerName := strings.ToLower(serverName)
+				var matched []NezhaServer
+				for _, s := range servers {
+					if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+						strings.Contains(strings.ToLower(s.Note), lowerName) ||
+						strings.Contains(strings.ToLower(s.Tag), lowerName) {
+						matched = append(matched, s)
+					}
+				}
+				if len(matched) == 0 {
+					return fmt.Sprintf("未找到服务器: %s", serverName)
+				}
+				if len(matched) > 1 {
+					result := "找到多个匹配的服务器，请使用更精确的名称：\n"
+					for _, m := range matched {
+						result += fmt.Sprintf("- %s %s\n", m.Name, summarizeTag(m.Tag))
+					}
+					return result
+				}
+				server = &matched[0]
+			}
+			serverID = server.ID
+		}
 	}
 
-	// 验证格式是否包含端口
-	if !strings.Contains(host, ":") {
-		return "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080"
-	}
-
-	err = UpdateNat(uint(id), host)
+	err = UpdateNat(uint(id), host, serverID)
 	if err != nil {
 		return fmt.Sprintf("修改失败: %v", err)
 	}
 
-	return fmt.Sprintf("✅ NAT [%d] 已更新\n新地址: %s", id, host)
+	msg := fmt.Sprintf("✅ NAT [%d] 已更新", id)
+	if host != "" {
+		msg += fmt.Sprintf("\n新地址: %s", host)
+	}
+	if serverID > 0 {
+		msg += fmt.Sprintf("\n新服务器: ID=%d", serverID)
+	}
+	return msg
 }
 
 // updateServerNoteCmd 更新服务器私有备注/标签

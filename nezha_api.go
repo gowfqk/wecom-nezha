@@ -544,16 +544,22 @@ func DeleteNat(id uint) error {
 	return nil
 }
 
-// UpdateNat 更新 NAT 配置的内网地址和端口
-func UpdateNat(id uint, host string) error {
+// UpdateNat 更新 NAT 配置（内网地址和/或服务器）
+// serverID 为 0 表示不修改服务器
+func UpdateNat(id uint, host string, serverID uint) error {
 	if err := NezhaLogin(); err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/api/v1/nat/%d", strings.TrimRight(NezhaUrl, "/"), id)
-	jsonData, _ := json.Marshal(map[string]interface{}{
-		"host": host,
-	})
+	updateData := map[string]interface{}{}
+	if host != "" {
+		updateData["host"] = host
+	}
+	if serverID > 0 {
+		updateData["server_id"] = serverID
+	}
+	jsonData, _ := json.Marshal(updateData)
 
 	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {
