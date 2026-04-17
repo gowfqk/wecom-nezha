@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -156,6 +157,101 @@ func wecomChan(res http.ResponseWriter, req *http.Request) {
 		if tokenValid { break }
 		accessToken = GetAccessToken()
 	}
+	writeJSON(res, http.StatusOK, postStatus)
+}
+
+// webhookHandler 通用 webhook 接收接口
+// POST /webhook
+// Body: {"token":"xxx","content":"消息内容","title":"标题","msg_type":"text/markdown","touser":"@all"}
+func webhookHandler(res http.ResponseWriter, req *http.Request) {
+	if !requirePost(res, req) {
+		return
+	}
+	res.Header().Set("Content-Type", "application/json")
+	req.Body = http.MaxBytesReader(res, req.Body, 1<<20)
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":40001,"errmsg":"invalid request body"}`)
+		return
+	}
+
+	var whReq WebhookRequest
+	if err = json.Unmarshal(body, &whReq); err != nil {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":40002,"errmsg":"invalid json format"}`)
+		return
+	}
+
+	// token 认证（支持 header 或 body 两种方式）
+	token := whReq.Token
+	if token == "" {
+		token = req.Header.Get("X-Webhook-Token")
+	}
+	if token == "" {
+		token = req.URL.Query().Get("token")
+	}
+	if token != Sendkey {
+		writeJSON(res, http.StatusUnauthorized, `{"errcode":40001,"errmsg":"invalid token"}`)
+		return
+	}
+
+	// 组装消息内容
+	content := strings.TrimSpace(whReq.Content)
+	if content == "" {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":44004,"errmsg":"content is empty"}`)
+		return
+	}
+
+	// 如果有标题，拼接到消息前面
+	if strings.TrimSpace(whReq.Title) != "" {
+		content = "【" + strings.TrimSpace(whReq.Title) + "】\n" + content
+	}
+
+	// 消息类型
+	msgType := normalizeAppMsgType(whReq.MsgType)
+	if msgType != "text" && msgType != "markdown" {
+		msgType = "text"
+	}
+
+	// 接收人
+	toUser := strings.TrimSpace(whReq.ToUser)
+	if toUser == "" {
+		toUser = WecomToUid
+	}
+
+	// 获取 access_token
+	accessToken := GetAccessToken()
+	if accessToken == "" {
+		writeJSON(res, http.StatusBadGateway, `{"errcode":50001,"errmsg":"failed to get access token"}`)
+		return
+	}
+
+	// 构建消息
+	postData := JsonData{
+		ToUser:                toUser,
+		AgentId:               WecomAid,
+		MsgType:               msgType,
+		DuplicateCheckInterval: 600,
+	}
+	if msgType == "markdown" {
+		postData.Markdown = Markdown{Content: content}
+	} else {
+		postData.Text = Msg{Content: content}
+	}
+
+	// 发送消息（带 token 重试）
+	postStatus := ""
+	for i := 0; i <= 3; i++ {
+		postStatus = PostMsg(postData, fmt.Sprintf(SendMessageApi, accessToken))
+		postResponse := ParseJson(postStatus)
+		tokenValid := ValidateToken(postResponse["errcode"])
+		if tokenValid {
+			break
+		}
+		accessToken = GetAccessToken()
+	}
+
+	log.Printf("webhook 消息发送完成，来自 %s，标题: %q", req.RemoteAddr, whReq.Title)
 	writeJSON(res, http.StatusOK, postStatus)
 }
 
