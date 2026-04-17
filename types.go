@@ -10,7 +10,10 @@ import (
 
 type RequestBody struct {
 	Sendkey  string    `json:"sendkey"`
+	Token    string    `json:"token,omitempty"`   // sendkey 的别名，webhook 风格
 	Msg      string    `json:"msg"`
+	Content  string    `json:"content,omitempty"` // msg 的别名，webhook 风格
+	Title    string    `json:"title,omitempty"`   // 标题前缀，自动拼接为 【标题】
 	MsgType  string    `json:"msg_type"`
 	ToUser   string    `json:"touser,omitempty"`
 	AgentId  string    `json:"agentid,omitempty"`
@@ -60,16 +63,6 @@ type MailRecipient struct {
 type MailAttachment struct {
 	FileName string `json:"file_name"`
 	Content  string `json:"content"`
-}
-
-// Webhook 请求体 - 通用 webhook 消息格式
-type WebhookRequest struct {
-	Token   string   `json:"token,omitempty"`   // 认证 token（同 SENDKEY）
-	Title   string   `json:"title,omitempty"`   // 消息标题（可选）
-	Content string   `json:"content"`           // 消息内容
-	MsgType string   `json:"msg_type,omitempty"` // 消息类型: text/markdown，默认 text
-	ToUser  string   `json:"touser,omitempty"`  // 接收人，默认 @all
-	AtMobiles []string `json:"at_mobiles,omitempty"` // @指定手机号（text 类型）
 }
 
 // 企微回调消息体

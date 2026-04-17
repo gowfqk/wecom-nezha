@@ -23,9 +23,6 @@ func main() {
 	
 	http.HandleFunc("/callback", recoverMiddleware(WecomCallbackHandler))
 	logger.Println("注册处理器: /callback")
-
-	http.HandleFunc("/webhook", recoverMiddleware(webhookHandler))
-	logger.Println("注册处理器: /webhook")
 	
 	http.HandleFunc("/healthz", recoverMiddleware(healthz))
 	logger.Println("注册处理器: /healthz")

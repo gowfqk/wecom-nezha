@@ -4,8 +4,7 @@
 
 ## 功能特性
 
-- ✅ **企业微信消息推送**：文本、Markdown、图片、链接
-- ✅ **通用 Webhook 接口**：接收外部系统的 POST 请求，转发到企业微信（支持 Nezha 告警、脚本、CI/CD 等）
+- ✅ **企业微信消息推送**：文本、Markdown、图片、链接，支持 Header/Query 认证（Webhook 风格）
 - ✅ **企业微信邮件发送**：支持抄送、密送、附件
 - ✅ **哪吒监控集成**：
   - 接收企业微信消息，查询服务器状态
@@ -82,84 +81,61 @@ docker run -d -p 8080:8080 \
 
 **Content-Type**: `application/json`
 
-**请求体示例**：
-
-```json
-{
-  "sendkey": "your_sendkey",
-  "msg_type": "text",
-  "text": {
-    "content": "这是一条测试消息"
-  }
-}
-```
-
-### Webhook 接收 - `/webhook`
-
-通用 webhook 接口，接收外部系统的 POST 请求，转发消息到企业微信。适用于 Nezha 监控告警、脚本输出、CI/CD 通知等场景。
-
-**请求方式**：`POST`
-
-**Content-Type**: `application/json`
-
 **认证方式**（任选一种）：
-1. Body 中的 `token` 字段
+1. Body / Form 中的 `sendkey` 或 `token` 字段
 2. Header: `X-Webhook-Token`
 3. Query 参数: `?token=xxx`
-
-> 认证 token 值与环境变量 `SENDKEY` 一致。
 
 **请求参数**：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `token` | string | ✅ | 认证 token（与 SENDKEY 一致） |
-| `content` | string | ✅ | 消息内容 |
-| `title` | string | ❌ | 消息标题，会拼接为 `【标题】` 前缀 |
-| `msg_type` | string | ❌ | 消息类型：`text`（默认）或 `markdown` |
+| `sendkey` / `token` | string | ✅ | 认证密钥（与 SENDKEY 一致） |
+| `msg` / `content` / `text.content` | string | ✅ | 消息内容（任选一种格式） |
+| `msg_type` | string | ❌ | 消息类型：`text`（默认）、`markdown`、`image` |
+| `title` | string | ❌ | 消息标题，自动拼接为 `【标题】` 前缀 |
 | `touser` | string | ❌ | 接收人，默认 `@all` |
+| `agentid` | string | ❌ | 应用 ID，默认使用环境变量 |
 
 **请求示例**：
 
 ```bash
-# 最简用法 - 纯文本
-curl -X POST https://your-domain.com/webhook \
+# 标准格式（text.content）
+curl -X POST https://your-domain.com/wecomchan \
   -H "Content-Type: application/json" \
-  -d '{"token":"your_sendkey","content":"服务器 CPU 使用率超过 90%"}'
+  -d '{
+    "sendkey": "your_sendkey",
+    "msg_type": "text",
+    "text": {"content": "这是一条测试消息"}
+  }'
 
-# 带标题的 Markdown 消息
-curl -X POST https://your-domain.com/webhook \
+# Webhook 风格（token + content + title）
+curl -X POST https://your-domain.com/wecomchan \
   -H "Content-Type: application/json" \
   -d '{
     "token": "your_sendkey",
     "title": "Nezha 告警",
-    "content": "服务器 **web-01** 已离线",
+    "content": "服务器 CPU 使用率超过 90%",
     "msg_type": "markdown"
   }'
 
-# 使用 Header 认证
-curl -X POST https://your-domain.com/webhook \
+# Header 认证
+curl -X POST https://your-domain.com/wecomchan \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: your_sendkey" \
   -d '{"content":"部署完成！"}'
 
 # 指定接收人
-curl -X POST https://your-domain.com/webhook \
+curl -X POST https://your-domain.com/wecomchan \
   -H "Content-Type: application/json" \
   -d '{"token":"your_sendkey","content":"运维通知","touser":"zhangsan|lisi"}'
-```
-
-**响应示例**：
-
-```json
-{"errcode": 0, "errmsg": "ok"}
 ```
 
 **Nezha 告警集成**：
 
 在哪吒监控面板 → 通知 → 添加通知方式中选择 **Webhook**，配置：
 
-- URL: `https://your-domain.com/webhook`
+- URL: `https://your-domain.com/wecomchan`
 - 请求方式: `POST`
 - 请求头: `Content-Type: application/json`
 - 请求体模板:
