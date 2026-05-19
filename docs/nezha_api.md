@@ -1,8 +1,8 @@
 # 哪吒监控（Nezha Monitoring）API 文档
 
-> 文档版本: 1.0  
-> 生成时间: 2026-04-10  
-> 数据来源: `docs.go` / `swagger.json` / `swagger.yaml`
+> 文档版本: 1.1  
+> 更新时间: 2026-05-19  
+> 数据来源: 哪吒监控 V1 官方 API 文档
 
 ---
 
@@ -939,6 +939,26 @@ console.log(metricsResp.data);
 
 ---
 
+## 七、可实现的功能总览
+
+基于以上 API，wecom-nezha 项目可实现以下功能：
+
+| 功能 | 对应 API | 说明 |
+|------|----------|------|
+| 服务器列表/详情 | GET `/server` | 获取所有服务器及实时状态 |
+| 服务器监控历史 | GET `/server/{id}/metrics` | CPU/内存/磁盘/网络历史数据 |
+| 离线检测 | GET `/server` | 通过 `last_active` 判断是否在线 |
+| 服务监控 | GET `/service` | 检查 HTTP/TCP 服务可用性 |
+| 告警通知 | GET/POST `/alert-rule` | 通过 API 管理告警规则 |
+| 用户管理 | GET/POST `/user` | 增删改查用户 |
+| 计划任务 | GET/POST `/cron` | 创建和管理定时任务、触发重启 |
+| DDNS | GET/POST `/ddns` | 动态域名解析管理 |
+| NAT 穿透 | GET/POST/PATCH `/nat` | 内网穿透配置 CRUD |
+| Token 刷新 | GET `/refresh-token` | 无需重新登录即可续期 |
+| 系统维护 | POST `/maintenance` | 触发面板维护操作 |
+
+---
+
 ## 六、注意事项
 
 1. **认证**: 除 `/login` 外，所有接口都需要在 Header 中携带 `Authorization: Bearer <token>`
@@ -949,4 +969,60 @@ console.log(metricsResp.data);
 
 ---
 
-*文档由 OpenClaw AI 助手自动生成*
+## 八、wecom-nezha 项目使用的 API 子集
+
+以下是 wecom-nezha 项目当前实际调用的哪吒监控 API 接口，及其对应的功能模块：
+
+### 已使用的接口
+
+| API 接口 | 方法 | 代码位置 | 功能说明 |
+|----------|------|----------|----------|
+| `/api/v1/login` | POST | `nezha_api.go: NezhaLogin()` | 登录获取 JWT Token |
+| `/api/v1/refresh-token` | GET | `nezha_api.go: RefreshNezhaToken()` | 无需重新登录刷新 Token |
+| `/api/v1/server` | GET | `nezha_api.go: GetNezhaServerList()` | 获取所有服务器及实时状态 |
+| `/api/v1/server?id=X` | GET | `nezha_api.go: GetServerByID()` | 获取单台服务器完整信息 |
+| `/api/v1/server/{id}` | PATCH | `nezha_api.go: UpdateServerNote()` / `UpdateServerTag()` | 更新服务器备注/标签 |
+| `/api/v1/server/{id}/metrics` | GET | `nezha_api.go: GetServerMetrics()` | 获取服务器监控历史数据 |
+| `/api/v1/profile` | GET | `nezha_api.go: GetAgentSecret()` | 获取 Agent Secret（安装命令用） |
+| `/api/v1/cron` | POST | `nezha_api.go: RebootNezhaServer()` | 创建触发任务（用于远程重启） |
+| `/api/v1/cron/{id}/manual` | GET | `nezha_api.go: RebootNezhaServer()` | 手动触发任务执行 |
+| `/api/v1/nat` | GET | `nezha_api.go: GetNatList()` | 获取 NAT 穿透配置列表 |
+| `/api/v1/nat` | POST | `nezha_api.go: AddNat()` | 添加 NAT 穿透配置 |
+| `/api/v1/nat/{id}` | PATCH | `nezha_api.go: UpdateNat()` / `ToggleNat()` | 更新/启用/禁用 NAT 配置 |
+| `/api/v1/batch-delete/nat` | POST | `nezha_api.go: DeleteNat()` | 批量删除 NAT 配置 |
+| `/api/v1/service` | GET | `nezha_api.go: GetServiceList()` | 获取服务监控状态 |
+
+### 对应的聊天命令映射
+
+| 聊天命令 | 调用的 API | 处理函数 |
+|----------|-----------|----------|
+| `状态` | GET `/server` | `getServerStatusSummary()` |
+| `离线` | GET `/server` | `getOfflineServersList()` |
+| `列表` | GET `/server` | `getServerList()` |
+| `<服务器名>` | GET `/server` | `getServerDetail()` |
+| `详情 <名称>` | GET `/server` | `getServerDetailFull()` |
+| `安装 <平台>` | GET `/profile` | `getAgentInstallCmd()` |
+| `重启 <名称>` | POST `/cron` + GET `/cron/{id}/manual` | `restartServer()` |
+| `标签 <名称> <内容>` | GET `/server` + PATCH `/server/{id}` | `updateServerNoteCmd()` |
+| `NAT` | GET `/nat` | `getNatList()` |
+| `NAT 添加 ...` | GET `/server` + POST `/nat` | `startNatAdd()` |
+| `NAT 删除 <ID>` | POST `/batch-delete/nat` | `startNatDelete()` |
+| `NAT 修改 <ID> ...` | PATCH `/nat/{id}` | `updateNatCmd()` |
+| `NAT 启用/禁用 <ID>` | PATCH `/nat/{id}` | `toggleNatCmd()` |
+| `监控 <名称> [指标]` | GET `/server/{id}/metrics` | `getServerMetricsCmd()` |
+| `服务` | GET `/service` | `getServiceStatus()` |
+
+### 未使用但可扩展的接口
+
+| API 接口 | 潜在功能 | 优先级 |
+|----------|----------|--------|
+| GET `/alert-rule` | 通过聊天查看/管理告警规则 | 中 |
+| GET `/ddns` | 管理 DDNS 配置 | 低 |
+| GET `/server-group` | 按分组查询服务器状态 | 中 |
+| POST `/force-update/server` | 通过聊天强制更新 Agent | 低 |
+| GET `/notification` | 查看通知渠道配置 | 低 |
+| POST `/maintenance` | 通过聊天触发系统维护 | 低 |
+
+---
+
+*文档由 OpenClaw AI 助手自动生成，最后更新: 2026-05-19*

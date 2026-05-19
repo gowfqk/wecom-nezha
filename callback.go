@@ -22,6 +22,23 @@ var processedMsgIDs = struct {
 	ids map[int64]time.Time
 }{ids: make(map[int64]time.Time)}
 
+func init() {
+	// 单一后台 Ticker 定期清理过期消息 ID，避免每条消息都启动 goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			processedMsgIDs.Lock()
+			for id, t := range processedMsgIDs.ids {
+				if time.Since(t) > 5*time.Minute {
+					delete(processedMsgIDs.ids, id)
+				}
+			}
+			processedMsgIDs.Unlock()
+		}
+	}()
+}
+
 // isMsgProcessed 检查消息是否已处理
 func isMsgProcessed(msgID int64) bool {
 	processedMsgIDs.RLock()
@@ -35,18 +52,6 @@ func markMsgProcessed(msgID int64) {
 	processedMsgIDs.Lock()
 	processedMsgIDs.ids[msgID] = time.Now()
 	processedMsgIDs.Unlock()
-	
-	// 清理超过5分钟的旧记录
-	go func() {
-		time.Sleep(5 * time.Minute)
-		processedMsgIDs.Lock()
-		for id, t := range processedMsgIDs.ids {
-			if time.Since(t) > 5*time.Minute {
-				delete(processedMsgIDs.ids, id)
-			}
-		}
-		processedMsgIDs.Unlock()
-	}()
 }
 
 // WecomCallbackHandler 处理企微回调验证和消息
@@ -289,6 +294,38 @@ type pendingAction struct {
 var pendingActions = make(map[string]pendingAction) // userID -> action
 var pendingMutex sync.RWMutex
 
+// formatMatchedList 格式化多个匹配服务器的列表提示
+func formatMatchedList(matched []NezhaServer, suffix string) string {
+	result := "找到多个匹配的服务器：\n"
+	for _, m := range matched {
+		status := "🟢在线"
+		if !m.Online {
+			status = "🔴离线"
+		}
+		result += fmt.Sprintf("- %s %s %s\n", m.Name, summarizeTag(m.Tag), status)
+	}
+	if suffix != "" {
+		result += "\n" + suffix
+	}
+	return result
+}
+
+// resolveServer 使用 FindServer 查找服务器并返回格式化的错误消息
+// 返回: server（成功时）, 错误提示消息（失败时）
+func resolveServer(name string, matchTag bool) (*NezhaServer, string) {
+	result, err := FindServer(name, matchTag)
+	if err != nil {
+		return nil, fmt.Sprintf("查询服务器失败: %v", err)
+	}
+	if result.Server != nil {
+		return result.Server, ""
+	}
+	if len(result.Matched) > 0 {
+		return nil, formatMatchedList(result.Matched, "请用更精确的名称")
+	}
+	return nil, fmt.Sprintf("未找到服务器: %s", name)
+}
+
 // processUserMessage 处理用户消息，返回回复内容
 func processUserMessage(content, userID string) string {
 	content = strings.TrimSpace(content)
@@ -306,6 +343,8 @@ func processUserMessage(content, userID string) string {
 - 列表：查看所有服务器
 - 安装：获取Agent安装命令
 - 详情 服务器名：查看服务器完整信息
+- 监控 服务器名 [指标] [周期]：查看监控历史
+- 服务：查看服务监控状态
 - 重启 服务器名：重启服务器（需确认）
 - 服务器名：快速查看服务器状态
 - NAT：查看穿透配置列表
@@ -315,13 +354,18 @@ func processUserMessage(content, userID string) string {
 - NAT 修改 ID 内网地址:端口 [服务器名]：修改穿透配置（地址和/或服务器）
 - NAT 修改 ID - 服务器名：只修改服务器
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
-- 确认/取消：通用确认机制`
+- 确认/取消：通用确认机制
+
+监控指标: cpu/memory/disk/net_in_speed/net_out_speed/load1
+监控周期: 1d(默认)/7d/30d`
 	case "状态", "状态查询":
 		return getServerStatusSummary()
 	case "离线":
 		return getOfflineServersList()
 	case "列表", "list":
 		return getServerList()
+	case "服务", "service":
+		return getServiceStatus()
 	case "安装", "agent":
 		return `安装命令用法：
 - 安装 linux：Linux 一键安装
@@ -353,12 +397,14 @@ func processUserMessage(content, userID string) string {
 			return updateServerNoteCmd(content)
 		}
 
-		// 检查是否有待确认的 NAT 添加步骤
+		// 检查是否有待确认的 NAT 添加步骤（含 step 字段表示分步进行中）
 		pendingMutex.RLock()
 		action, hasPending := pendingActions[userID]
 		pendingMutex.RUnlock()
 		if hasPending && action.Type == "nat_add" {
-			return handleNatAddStep(userID, content)
+			if _, hasStep := action.Data["step"]; hasStep {
+				return handleNatAddStep(userID, content)
+			}
 		}
 
 		// 安装命令带平台参数
@@ -371,6 +417,11 @@ func processUserMessage(content, userID string) string {
 - 安装 docker：Docker 安装命令`
 			}
 			return getAgentInstallCmd(platform)
+		}
+
+		// 监控历史命令
+		if strings.HasPrefix(lower, "监控 ") || strings.HasPrefix(lower, "monitor ") {
+			return getServerMetricsCmd(content)
 		}
 
 		// 详情命令
@@ -512,48 +563,17 @@ func getServerList() string {
 
 // getServerDetail 获取服务器详情
 func getServerDetail(name string) string {
-	server, err := GetNezhaServerByName(name)
-	if err == nil {
-		// 精确匹配成功，显示详情
-		return formatServerDetail(server)
-	}
-
-	// 模糊匹配：同时匹配 Name、Note、Tag
-	servers, err := GetNezhaServerList()
+	result, err := FindServer(name, true)
 	if err != nil {
 		return fmt.Sprintf("查询失败: %v", err)
 	}
-
-	var matched []NezhaServer
-	lowerName := strings.ToLower(name)
-	for _, s := range servers {
-		if strings.Contains(strings.ToLower(s.Name), lowerName) ||
-			strings.Contains(strings.ToLower(s.Note), lowerName) ||
-			strings.Contains(strings.ToLower(s.Tag), lowerName) {
-			matched = append(matched, s)
-		}
+	if result.Server != nil {
+		return formatServerDetail(result.Server)
 	}
-
-	if len(matched) == 0 {
-		return fmt.Sprintf("未找到服务器: %s\n发送 帮助 查看命令", name)
+	if len(result.Matched) > 0 {
+		return formatMatchedList(result.Matched, "回复服务器名称查看详情")
 	}
-
-	if len(matched) == 1 {
-		// 只有一个匹配，显示详情
-		return formatServerDetail(&matched[0])
-	}
-
-	// 多个匹配，显示列表
-	result := "找到多个匹配的服务器：\n"
-	for _, m := range matched {
-		status := "🟢在线"
-		if !m.Online {
-			status = "🔴离线"
-		}
-		result += fmt.Sprintf("- %s %s %s\n", m.Name, summarizeTag(m.Tag), status)
-	}
-	result += "\n回复服务器名称查看详情"
-	return result
+	return fmt.Sprintf("未找到服务器: %s\n发送 帮助 查看命令", name)
 }
 
 // formatServerDetail 格式化服务器详情（快速查看）
@@ -664,34 +684,17 @@ func getServerDetailFull(name string) string {
 	if name == "" {
 		return "用法: 详情 服务器名"
 	}
-	server, err := GetNezhaServerByName(name)
+	result, err := FindServer(name, false)
 	if err != nil {
-		// 模糊匹配
-		servers, err2 := GetNezhaServerList()
-		if err2 != nil {
-			return fmt.Sprintf("查询失败: %v", err2)
-		}
-		var matched []NezhaServer
-		lowerName := strings.ToLower(name)
-		for _, s := range servers {
-			if strings.Contains(strings.ToLower(s.Name), lowerName) {
-				matched = append(matched, s)
-			}
-		}
-		if len(matched) == 0 {
-			return fmt.Sprintf("未找到服务器: %s", name)
-		}
-		if len(matched) == 1 {
-			return formatServerDetailFull(&matched[0])
-		}
-		result := "找到多个匹配的服务器：\n"
-		for _, m := range matched {
-			result += fmt.Sprintf("- %s\n", m.Name)
-		}
-		result += "\n请用完整名称查看详情"
-		return result
+		return fmt.Sprintf("查询失败: %v", err)
 	}
-	return formatServerDetailFull(server)
+	if result.Server != nil {
+		return formatServerDetailFull(result.Server)
+	}
+	if len(result.Matched) > 0 {
+		return formatMatchedList(result.Matched, "请用完整名称查看详情")
+	}
+	return fmt.Sprintf("未找到服务器: %s", name)
 }
 
 // restartServer 重启服务器（通过创建触发任务）
@@ -701,41 +704,9 @@ func restartServer(name, userID string) string {
 		return "用法: 重启 服务器名"
 	}
 	
-	// 先尝试精确匹配
-	server, err := GetNezhaServerByName(name)
-	if err != nil {
-		// 模糊匹配：同时匹配 Name、Note、Tag
-		servers, err2 := GetNezhaServerList()
-		if err2 != nil {
-			return fmt.Sprintf("查询服务器失败: %v", err2)
-		}
-		
-		var matched []NezhaServer
-		lowerName := strings.ToLower(name)
-		for _, s := range servers {
-			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
-				strings.Contains(strings.ToLower(s.Note), lowerName) ||
-				strings.Contains(strings.ToLower(s.Tag), lowerName) {
-				matched = append(matched, s)
-			}
-		}
-		
-		if len(matched) == 0 {
-			return fmt.Sprintf("未找到服务器: %s", name)
-		}
-		if len(matched) > 1 {
-			result := "找到多个匹配的服务器：\n"
-			for _, m := range matched {
-				status := "🟢在线"
-				if !m.Online {
-					status = "🔴离线"
-				}
-				result += fmt.Sprintf("- %s %s %s\n", m.Name, summarizeTag(m.Tag), status)
-			}
-			result += "\n请用更精确的名称"
-			return result
-		}
-		server = &matched[0]
+	server, errMsg := resolveServer(name, true)
+	if errMsg != "" {
+		return errMsg
 	}
 	
 	if !server.Online {
@@ -892,7 +863,7 @@ func startNatAdd(userID, content string) string {
 	pendingMutex.Lock()
 	pendingActions[userID] = pendingAction{
 		Type: "nat_add",
-		Data: map[string]interface{}{},
+		Data: map[string]interface{}{"step": float64(0)},
 	}
 	pendingMutex.Unlock()
 
@@ -906,11 +877,12 @@ func handleNatAddStep(userID, content string) string {
 	pendingMutex.Unlock()
 
 	data := action.Data
-	step := len(data)
+	step := int(data["step"].(float64))
 
 	switch step {
 	case 0: // 输入名称
 		data["name"] = content
+		data["step"] = float64(1)
 		pendingMutex.Lock()
 		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
 		pendingMutex.Unlock()
@@ -918,6 +890,7 @@ func handleNatAddStep(userID, content string) string {
 
 	case 1: // 输入域名
 		data["domain"] = content
+		data["step"] = float64(2)
 		pendingMutex.Lock()
 		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
 		pendingMutex.Unlock()
@@ -925,6 +898,7 @@ func handleNatAddStep(userID, content string) string {
 
 	case 2: // 输入内网地址
 		data["host"] = content
+		data["step"] = float64(3)
 		pendingMutex.Lock()
 		pendingActions[userID] = pendingAction{Type: "nat_add", Data: data}
 		pendingMutex.Unlock()
@@ -945,32 +919,9 @@ func handleNatAddStep(userID, content string) string {
 
 // confirmNatAdd 确认添加 NAT
 func confirmNatAdd(userID, name, domain, host, serverName string) string {
-	server, err := GetNezhaServerByName(serverName)
-	if err != nil {
-		// 模糊匹配
-		servers, err2 := GetNezhaServerList()
-		if err2 != nil {
-			return fmt.Sprintf("查询服务器失败: %v", err2)
-		}
-		var matched []NezhaServer
-		lowerName := strings.ToLower(serverName)
-		for _, s := range servers {
-			if strings.Contains(strings.ToLower(s.Name), lowerName) {
-				matched = append(matched, s)
-			}
-		}
-		if len(matched) == 0 {
-			return fmt.Sprintf("未找到服务器: %s\n请重新发送 NAT 添加", serverName)
-		}
-		if len(matched) > 1 {
-			result := "找到多个匹配的服务器：\n"
-			for _, m := range matched {
-				result += fmt.Sprintf("- %s\n", m.Name)
-			}
-			result += "\n请用更精确的名称重新发送 NAT 添加"
-			return result
-		}
-		server = &matched[0]
+	server, errMsg := resolveServer(serverName, false)
+	if errMsg != "" {
+		return errMsg + "\n请重新发送 NAT 添加"
 	}
 
 	// 保存待确认操作
@@ -1169,30 +1120,9 @@ func updateNatCmd(content string) string {
 			return "请提供服务器名\n用法: NAT 修改 ID - 服务器名"
 		}
 		serverName := strings.TrimSpace(parts[4])
-		server, serr := GetNezhaServerByName(serverName)
-		if serr != nil {
-			// 模糊匹配
-			servers, _ := GetNezhaServerList()
-			lowerName := strings.ToLower(serverName)
-			var matched []NezhaServer
-			for _, s := range servers {
-				if strings.Contains(strings.ToLower(s.Name), lowerName) ||
-					strings.Contains(strings.ToLower(s.Note), lowerName) ||
-					strings.Contains(strings.ToLower(s.Tag), lowerName) {
-					matched = append(matched, s)
-				}
-			}
-			if len(matched) == 0 {
-				return fmt.Sprintf("未找到服务器: %s", serverName)
-			}
-			if len(matched) > 1 {
-				result := "找到多个匹配的服务器，请使用更精确的名称：\n"
-				for _, m := range matched {
-					result += fmt.Sprintf("- %s %s\n", m.Name, summarizeTag(m.Tag))
-				}
-				return result
-			}
-			server = &matched[0]
+		server, errMsg := resolveServer(serverName, true)
+		if errMsg != "" {
+			return errMsg
 		}
 		serverID = server.ID
 	} else {
@@ -1205,29 +1135,9 @@ func updateNatCmd(content string) string {
 		// 如果还有第5个参数，是服务器名
 		if len(parts) >= 5 {
 			serverName := strings.TrimSpace(parts[4])
-			server, serr := GetNezhaServerByName(serverName)
-			if serr != nil {
-				servers, _ := GetNezhaServerList()
-				lowerName := strings.ToLower(serverName)
-				var matched []NezhaServer
-				for _, s := range servers {
-					if strings.Contains(strings.ToLower(s.Name), lowerName) ||
-						strings.Contains(strings.ToLower(s.Note), lowerName) ||
-						strings.Contains(strings.ToLower(s.Tag), lowerName) {
-						matched = append(matched, s)
-					}
-				}
-				if len(matched) == 0 {
-					return fmt.Sprintf("未找到服务器: %s", serverName)
-				}
-				if len(matched) > 1 {
-					result := "找到多个匹配的服务器，请使用更精确的名称：\n"
-					for _, m := range matched {
-						result += fmt.Sprintf("- %s %s\n", m.Name, summarizeTag(m.Tag))
-					}
-					return result
-				}
-				server = &matched[0]
+			server, errMsg := resolveServer(serverName, true)
+			if errMsg != "" {
+				return errMsg
 			}
 			serverID = server.ID
 		}
@@ -1272,37 +1182,187 @@ func updateServerNoteCmd(content string) string {
 	serverName := strings.TrimSpace(fields[0])
 	note := strings.TrimSpace(fields[1])
 
-	// 模糊匹配服务器
-	server, err := GetNezhaServerByName(serverName)
-	if err != nil {
-		servers, err2 := GetNezhaServerList()
-		if err2 != nil {
-			return fmt.Sprintf("查询服务器失败: %v", err2)
-		}
-		var matched []NezhaServer
-		lowerName := strings.ToLower(serverName)
-		for _, s := range servers {
-			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
-				strings.Contains(strings.ToLower(s.Note), lowerName) {
-				matched = append(matched, s)
-			}
-		}
-		if len(matched) == 0 {
-			return fmt.Sprintf("未找到服务器: %s", serverName)
-		}
-		if len(matched) > 1 {
-			result := "找到多个匹配的服务器：\n"
-			for _, m := range matched {
-				result += fmt.Sprintf("- %s\n", m.Name)
-			}
-			return result + "\n请用更精确的名称"
-		}
-		server = &matched[0]
+	// 查找服务器
+	server, errMsg := resolveServer(serverName, true)
+	if errMsg != "" {
+		return errMsg
 	}
 
-	err = UpdateServerTag(server.ID, note)
+	err := UpdateServerTag(server.ID, note)
 	if err != nil {
 		return fmt.Sprintf("更新标签失败: %v", err)
 	}
 	return fmt.Sprintf("✅ 已更新 %s 的标签\n标签: %s", server.Name, note)
+}
+
+
+// getServerMetricsCmd 获取服务器监控历史
+// 格式: 监控 服务器名 [指标] [周期]
+// 指标: cpu(默认)/memory/disk/net_in_speed/net_out_speed/load1/load5/load15
+// 周期: 1d(默认)/7d/30d
+func getServerMetricsCmd(content string) string {
+	lower := strings.ToLower(content)
+	var trimmed string
+	if strings.HasPrefix(lower, "监控 ") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(content, "监控"))
+	} else if strings.HasPrefix(lower, "monitor ") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(lower, "monitor "))
+	}
+
+	if trimmed == "" {
+		return `监控命令用法：
+- 监控 服务器名：查看 CPU 24h 数据
+- 监控 服务器名 memory：查看内存数据
+- 监控 服务器名 cpu 7d：查看 CPU 7天数据
+
+支持指标: cpu/memory/disk/net_in_speed/net_out_speed/load1/load5/load15
+支持周期: 1d(默认)/7d/30d`
+	}
+
+	parts := strings.Fields(trimmed)
+	serverName := parts[0]
+	metric := "cpu"
+	period := "1d"
+
+	if len(parts) >= 2 {
+		metric = strings.ToLower(parts[1])
+	}
+	if len(parts) >= 3 {
+		period = strings.ToLower(parts[2])
+	}
+
+	// 验证指标名
+	validMetrics := map[string]string{
+		"cpu":              "CPU 使用率",
+		"memory":           "内存使用率",
+		"disk":             "磁盘使用率",
+		"swap":             "Swap 使用率",
+		"net_in_speed":     "入站网速",
+		"net_out_speed":    "出站网速",
+		"net_in_transfer":  "入站总流量",
+		"net_out_transfer": "出站总流量",
+		"load1":            "1分钟负载",
+		"load5":            "5分钟负载",
+		"load15":           "15分钟负载",
+	}
+	metricLabel, ok := validMetrics[metric]
+	if !ok {
+		return fmt.Sprintf("不支持的指标: %s\n支持: cpu/memory/disk/swap/net_in_speed/net_out_speed/load1/load5/load15", metric)
+	}
+
+	// 验证周期
+	if period != "1d" && period != "7d" && period != "30d" {
+		return "不支持的周期，可选: 1d / 7d / 30d"
+	}
+
+	// 查找服务器
+	server, errMsg := resolveServer(serverName, true)
+	if errMsg != "" {
+		return errMsg
+	}
+
+	// 获取监控数据
+	dataPoints, err := GetServerMetrics(server.ID, metric, period)
+	if err != nil {
+		return fmt.Sprintf("获取监控数据失败: %v", err)
+	}
+
+	if len(dataPoints) == 0 {
+		return fmt.Sprintf("服务器 %s 暂无 %s 的监控数据（%s）", server.Name, metricLabel, period)
+	}
+
+	// 计算统计值
+	var sum, maxVal, minVal float64
+	minVal = dataPoints[0].Avg
+	for _, dp := range dataPoints {
+		sum += dp.Avg
+		if dp.Avg > maxVal {
+			maxVal = dp.Avg
+		}
+		if dp.Avg < minVal {
+			minVal = dp.Avg
+		}
+	}
+	avgVal := sum / float64(len(dataPoints))
+	current := dataPoints[len(dataPoints)-1].Avg
+
+	// 格式化输出
+	unit := ""
+	if strings.Contains(metric, "speed") {
+		unit = " B/s"
+	} else if strings.Contains(metric, "transfer") {
+		unit = " B"
+	} else if strings.Contains(metric, "load") {
+		unit = ""
+	} else {
+		unit = "%"
+	}
+
+	return fmt.Sprintf(`监控数据: %s - %s（%s）
+当前: %.2f%s
+平均: %.2f%s
+最高: %.2f%s
+最低: %.2f%s
+数据点: %d 个`,
+		server.Name, metricLabel, period,
+		current, unit,
+		avgVal, unit,
+		maxVal, unit,
+		minVal, unit,
+		len(dataPoints))
+}
+
+// getServiceStatus 获取服务监控状态
+func getServiceStatus() string {
+	services, err := GetServiceList()
+	if err != nil {
+		return fmt.Sprintf("获取服务状态失败: %v", err)
+	}
+
+	if len(services) == 0 {
+		return "当前没有配置服务监控\n请在哪吒面板中添加服务监控"
+	}
+
+	// 服务类型映射
+	typeNames := map[uint]string{
+		0: "TCP",
+		1: "HTTP",
+		2: "HTTPS",
+		3: "DNS",
+		4: "端口",
+		5: "Ping",
+	}
+
+	online := 0
+	offline := 0
+	result := "服务监控状态：\n"
+
+	for _, s := range services {
+		status := "🟢"
+		if !s.Online {
+			status = "🔴"
+			offline++
+		} else {
+			online++
+		}
+
+		typeName := typeNames[s.Type]
+		if typeName == "" {
+			typeName = "未知"
+		}
+
+		delayStr := "N/A"
+		if s.AvgDelay > 0 {
+			if s.AvgDelay > 1000 {
+				delayStr = fmt.Sprintf("%.1fs", s.AvgDelay/1000)
+			} else {
+				delayStr = fmt.Sprintf("%.0fms", s.AvgDelay)
+			}
+		}
+
+		result += fmt.Sprintf("%s [%s] %s → %s (%s)\n", status, typeName, s.Name, s.Target, delayStr)
+	}
+
+	result += fmt.Sprintf("\n总计: %d | 正常: %d | 异常: %d", len(services), online, offline)
+	return result
 }

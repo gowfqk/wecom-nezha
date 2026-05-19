@@ -36,8 +36,7 @@ services:
       - WECOM_SECRET=${WECOM_SECRET}
       - WECOM_AID=${WECOM_AID}
       - WECOM_TOUID=${WECOM_TOUID:-@all}
-      - WECOM_TOKEN=${WECOM_TOKEN}
-      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
+      - WECOM_TOKEN=${WECOM_TOKEN}      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
       - NEZHA_URL=${NEZHA_URL}
       - NEZHA_USERNAME=${NEZHA_USERNAME}
       - NEZHA_PASSWORD=${NEZHA_PASSWORD}
@@ -195,6 +194,8 @@ curl -X POST https://your-domain.com/wecomchan \
 | `列表` / `list` | 查看所有服务器 |
 | `<服务器名>` | 查询指定服务器详情（支持模糊匹配） |
 | `详情 <服务器名>` | 查看服务器完整信息（CPU、内存、磁盘、负载、网络等） |
+| `监控 <服务器名> [指标] [周期]` | 查看服务器监控历史（指标: cpu/memory/disk 等，周期: 1d/7d/30d） |
+| `服务` / `service` | 查看服务监控状态（HTTP/TCP/Ping 等） |
 | `安装 linux` | 获取 Linux Agent 一键安装命令 |
 | `安装 windows` | 获取 Windows Agent 安装命令 |
 | `安装 docker` | 获取 Docker Agent 安装命令 |
@@ -229,7 +230,7 @@ curl -X POST https://your-domain.com/wecomchan \
 | `NEZHA_URL` | 哪吒监控面板地址 | - |
 | `NEZHA_USERNAME` | 哪吒用户名 | - |
 | `NEZHA_PASSWORD` | 哪吒密码 | - |
-| `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis` | `none` |
+| `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis`（推荐 `memory`） | `none` |
 | `REDIS_STAT` | Redis 状态：`ON`/`OFF` | `OFF` |
 | `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
 | `REDIS_PASSWORD` | Redis 密码 | - |

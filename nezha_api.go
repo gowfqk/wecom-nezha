@@ -6,11 +6,21 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 var nezhaAccessToken = ""
 var nezhaTokenExpire time.Time
+
+// 服务器列表短期缓存（减少重复 API 调用）
+var serverListCache struct {
+	sync.RWMutex
+	servers    []NezhaServer
+	expireTime time.Time
+}
+
+const serverListCacheTTL = 10 * time.Second
 
 func nezhaRequest(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
@@ -37,6 +47,61 @@ func NezhaLogin() error {
 		return nil
 	}
 
+	// token 即将过期或已过期，优先尝试 refresh-token（无需重新输入密码）
+	if nezhaAccessToken != "" {
+		if err := RefreshNezhaToken(); err == nil {
+			logger.Println("Nezha Token 刷新成功")
+			return nil
+		} else {
+			logger.Printf("Nezha Token 刷新失败，回退到重新登录: %v", err)
+		}
+	}
+
+	// 刷新失败或无旧 token，执行完整登录
+	return nezhaFullLogin()
+}
+
+// RefreshNezhaToken 使用已有 token 调用 /refresh-token 续期
+func RefreshNezhaToken() error {
+	url := fmt.Sprintf("%s/api/v1/refresh-token", strings.TrimRight(NezhaUrl, "/"))
+
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("刷新请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取刷新响应失败: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("刷新失败（HTTP %d）", resp.StatusCode)
+	}
+
+	var result NezhaLoginResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析刷新响应失败: %v", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("刷新失败: %s", result.Error)
+	}
+
+	nezhaAccessToken = result.Data.Token
+	expireTime, err := time.Parse(time.RFC3339, result.Data.Expire)
+	if err != nil {
+		nezhaTokenExpire = time.Now().Add(time.Hour)
+	} else {
+		nezhaTokenExpire = expireTime
+	}
+
+	return nil
+}
+
+// nezhaFullLogin 使用用户名密码完整登录
+func nezhaFullLogin() error {
 	url := fmt.Sprintf("%s/api/v1/login", strings.TrimRight(NezhaUrl, "/"))
 	loginData := map[string]string{
 		"username": NezhaUsername,
@@ -93,9 +158,18 @@ func NezhaLogin() error {
 	return nil
 }
 
-// GetNezhaServerList 获取服务器列表
+// GetNezhaServerList 获取服务器列表（带短期缓存）
 func GetNezhaServerList() ([]NezhaServer, error) {
-	// 先登录获取 token
+	// 检查缓存
+	serverListCache.RLock()
+	if !serverListCache.expireTime.IsZero() && time.Now().Before(serverListCache.expireTime) {
+		servers := serverListCache.servers
+		serverListCache.RUnlock()
+		return servers, nil
+	}
+	serverListCache.RUnlock()
+
+	// 缓存过期，重新获取
 	if err := NezhaLogin(); err != nil {
 		return nil, err
 	}
@@ -155,22 +229,68 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		}
 	}
 
+	// 写入缓存
+	serverListCache.Lock()
+	serverListCache.servers = servers
+	serverListCache.expireTime = time.Now().Add(serverListCacheTTL)
+	serverListCache.Unlock()
+
 	return servers, nil
 }
 
-// GetNezhaServerByName 根据名称获取服务器
-func GetNezhaServerByName(name string) (*NezhaServer, error) {
+// FindServerResult 服务器查找结果
+type FindServerResult struct {
+	Server  *NezhaServer   // 唯一匹配时返回
+	Matched []NezhaServer  // 多个匹配时返回列表
+}
+
+// FindServer 统一的服务器查找函数（精确匹配 + 模糊匹配）
+// matchTag: 是否同时匹配 Note 和 Tag 字段
+func FindServer(name string, matchTag bool) (*FindServerResult, error) {
 	servers, err := GetNezhaServerList()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, s := range servers {
-		if s.Name == name {
-			return &s, nil
+	// 精确匹配
+	for i := range servers {
+		if servers[i].Name == name {
+			return &FindServerResult{Server: &servers[i]}, nil
 		}
 	}
 
+	// 模糊匹配
+	lowerName := strings.ToLower(name)
+	var matched []NezhaServer
+	for _, s := range servers {
+		if strings.Contains(strings.ToLower(s.Name), lowerName) {
+			matched = append(matched, s)
+		} else if matchTag {
+			if strings.Contains(strings.ToLower(s.Note), lowerName) ||
+				strings.Contains(strings.ToLower(s.Tag), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+	}
+
+	if len(matched) == 0 {
+		return &FindServerResult{}, nil
+	}
+	if len(matched) == 1 {
+		return &FindServerResult{Server: &matched[0]}, nil
+	}
+	return &FindServerResult{Matched: matched}, nil
+}
+
+// GetNezhaServerByName 根据名称精确获取服务器
+func GetNezhaServerByName(name string) (*NezhaServer, error) {
+	result, err := FindServer(name, false)
+	if err != nil {
+		return nil, err
+	}
+	if result.Server != nil {
+		return result.Server, nil
+	}
 	return nil, fmt.Errorf("未找到服务器: %s", name)
 }
 
@@ -612,4 +732,154 @@ func ToggleNat(id uint, enabled bool) error {
 	}
 
 	return nil
+}
+
+
+// MetricsDataPoint 监控数据点
+type MetricsDataPoint struct {
+	Timestamp int64   `json:"created_at"`
+	Avg       float64 `json:"avg_val"`
+}
+
+// GetServerMetrics 获取服务器监控历史数据
+func GetServerMetrics(serverID uint, metric string, period string) ([]MetricsDataPoint, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	if period == "" {
+		period = "1d"
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server/%d/metrics?metric=%s&period=%s",
+		strings.TrimRight(NezhaUrl, "/"), serverID, metric, period)
+
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return nil, fmt.Errorf("API请求失败（HTTP %d）: %s", resp.StatusCode, raw)
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Error   string `json:"error"`
+		Data    []MetricsDataPoint `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		// 尝试嵌套格式
+		var result2 struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+			Data    struct {
+				DataPoints []MetricsDataPoint `json:"data_points"`
+			} `json:"data"`
+		}
+		if err2 := json.Unmarshal(body, &result2); err2 != nil {
+			return nil, fmt.Errorf("解析监控数据失败: %v", err)
+		}
+		return result2.Data.DataPoints, nil
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("获取监控数据失败: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// ServiceInfo 服务监控信息
+type ServiceInfo struct {
+	ID       uint   `json:"id"`
+	Name     string `json:"name"`
+	Type     uint   `json:"type"`
+	Target   string `json:"target"`
+	Duration uint   `json:"duration"`
+}
+
+// ServiceStatus 服务监控状态（从 /service 接口解析）
+type ServiceStatus struct {
+	Name      string
+	Target    string
+	Type      uint
+	AvgDelay  float64
+	Online    bool
+}
+
+// GetServiceList 获取服务监控状态
+func GetServiceList() ([]ServiceStatus, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/service/list", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
+		}
+		return nil, fmt.Errorf("API请求失败（HTTP %d）: %s", resp.StatusCode, raw)
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("解析服务数据失败: %v", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("获取服务列表失败: %s", result.Error)
+	}
+
+	var services []ServiceStatus
+	for _, s := range result.Data {
+		name, _ := s["name"].(string)
+		target, _ := s["target"].(string)
+		sType := uint(0)
+		if t, ok := s["type"].(float64); ok {
+			sType = uint(t)
+		}
+		avgDelay := float64(0)
+		if d, ok := s["avg_delay"].(float64); ok {
+			avgDelay = d
+		}
+		// 判断在线状态：有延迟数据视为在线
+		online := avgDelay > 0
+
+		services = append(services, ServiceStatus{
+			Name:     name,
+			Target:   target,
+			Type:     sType,
+			AvgDelay: avgDelay,
+			Online:   online,
+		})
+	}
+
+	return services, nil
 }

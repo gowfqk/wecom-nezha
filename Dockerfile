@@ -1,10 +1,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS builder
 
-# 替换为国内源
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
-
 ENV GO111MODULE="on"
-ENV GOPROXY="https://goproxy.cn,direct"
+ENV GOPROXY="https://goproxy.cn,https://proxy.golang.org,direct"
 ENV CGO_ENABLED=0
 
 WORKDIR /build
