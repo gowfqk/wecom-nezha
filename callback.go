@@ -306,6 +306,8 @@ func processUserMessage(content, userID string) string {
 - 列表：查看所有服务器
 - 安装：获取Agent安装命令
 - 详情 服务器名：查看服务器完整信息
+- 监控 服务器名 [指标] [周期]：查看监控历史
+- 服务：查看服务监控状态
 - 重启 服务器名：重启服务器（需确认）
 - 服务器名：快速查看服务器状态
 - NAT：查看穿透配置列表
@@ -315,13 +317,18 @@ func processUserMessage(content, userID string) string {
 - NAT 修改 ID 内网地址:端口 [服务器名]：修改穿透配置（地址和/或服务器）
 - NAT 修改 ID - 服务器名：只修改服务器
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
-- 确认/取消：通用确认机制`
+- 确认/取消：通用确认机制
+
+监控指标: cpu/memory/disk/net_in_speed/net_out_speed/load1
+监控周期: 1d(默认)/7d/30d`
 	case "状态", "状态查询":
 		return getServerStatusSummary()
 	case "离线":
 		return getOfflineServersList()
 	case "列表", "list":
 		return getServerList()
+	case "服务", "service":
+		return getServiceStatus()
 	case "安装", "agent":
 		return `安装命令用法：
 - 安装 linux：Linux 一键安装
@@ -371,6 +378,11 @@ func processUserMessage(content, userID string) string {
 - 安装 docker：Docker 安装命令`
 			}
 			return getAgentInstallCmd(platform)
+		}
+
+		// 监控历史命令
+		if strings.HasPrefix(lower, "监控 ") || strings.HasPrefix(lower, "monitor ") {
+			return getServerMetricsCmd(content)
 		}
 
 		// 详情命令
@@ -1305,4 +1317,201 @@ func updateServerNoteCmd(content string) string {
 		return fmt.Sprintf("更新标签失败: %v", err)
 	}
 	return fmt.Sprintf("✅ 已更新 %s 的标签\n标签: %s", server.Name, note)
+}
+
+
+// getServerMetricsCmd 获取服务器监控历史
+// 格式: 监控 服务器名 [指标] [周期]
+// 指标: cpu(默认)/memory/disk/net_in_speed/net_out_speed/load1/load5/load15
+// 周期: 1d(默认)/7d/30d
+func getServerMetricsCmd(content string) string {
+	lower := strings.ToLower(content)
+	var trimmed string
+	if strings.HasPrefix(lower, "监控 ") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(content, "监控"))
+	} else if strings.HasPrefix(lower, "monitor ") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(lower, "monitor "))
+	}
+
+	if trimmed == "" {
+		return `监控命令用法：
+- 监控 服务器名：查看 CPU 24h 数据
+- 监控 服务器名 memory：查看内存数据
+- 监控 服务器名 cpu 7d：查看 CPU 7天数据
+
+支持指标: cpu/memory/disk/net_in_speed/net_out_speed/load1/load5/load15
+支持周期: 1d(默认)/7d/30d`
+	}
+
+	parts := strings.Fields(trimmed)
+	serverName := parts[0]
+	metric := "cpu"
+	period := "1d"
+
+	if len(parts) >= 2 {
+		metric = strings.ToLower(parts[1])
+	}
+	if len(parts) >= 3 {
+		period = strings.ToLower(parts[2])
+	}
+
+	// 验证指标名
+	validMetrics := map[string]string{
+		"cpu":              "CPU 使用率",
+		"memory":           "内存使用率",
+		"disk":             "磁盘使用率",
+		"swap":             "Swap 使用率",
+		"net_in_speed":     "入站网速",
+		"net_out_speed":    "出站网速",
+		"net_in_transfer":  "入站总流量",
+		"net_out_transfer": "出站总流量",
+		"load1":            "1分钟负载",
+		"load5":            "5分钟负载",
+		"load15":           "15分钟负载",
+	}
+	metricLabel, ok := validMetrics[metric]
+	if !ok {
+		return fmt.Sprintf("不支持的指标: %s\n支持: cpu/memory/disk/swap/net_in_speed/net_out_speed/load1/load5/load15", metric)
+	}
+
+	// 验证周期
+	if period != "1d" && period != "7d" && period != "30d" {
+		return "不支持的周期，可选: 1d / 7d / 30d"
+	}
+
+	// 查找服务器
+	server, err := GetNezhaServerByName(serverName)
+	if err != nil {
+		// 模糊匹配
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询服务器失败: %v", err2)
+		}
+		var matched []NezhaServer
+		lowerName := strings.ToLower(serverName)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+				strings.Contains(strings.ToLower(s.Note), lowerName) ||
+				strings.Contains(strings.ToLower(s.Tag), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", serverName)
+		}
+		if len(matched) > 1 {
+			result := "找到多个匹配的服务器：\n"
+			for _, m := range matched {
+				result += fmt.Sprintf("- %s\n", m.Name)
+			}
+			result += "\n请用更精确的名称"
+			return result
+		}
+		server = &matched[0]
+	}
+
+	// 获取监控数据
+	dataPoints, err := GetServerMetrics(server.ID, metric, period)
+	if err != nil {
+		return fmt.Sprintf("获取监控数据失败: %v", err)
+	}
+
+	if len(dataPoints) == 0 {
+		return fmt.Sprintf("服务器 %s 暂无 %s 的监控数据（%s）", server.Name, metricLabel, period)
+	}
+
+	// 计算统计值
+	var sum, maxVal, minVal float64
+	minVal = dataPoints[0].Avg
+	for _, dp := range dataPoints {
+		sum += dp.Avg
+		if dp.Avg > maxVal {
+			maxVal = dp.Avg
+		}
+		if dp.Avg < minVal {
+			minVal = dp.Avg
+		}
+	}
+	avgVal := sum / float64(len(dataPoints))
+	current := dataPoints[len(dataPoints)-1].Avg
+
+	// 格式化输出
+	unit := ""
+	if strings.Contains(metric, "speed") {
+		unit = " B/s"
+	} else if strings.Contains(metric, "transfer") {
+		unit = " B"
+	} else if strings.Contains(metric, "load") {
+		unit = ""
+	} else {
+		unit = "%"
+	}
+
+	return fmt.Sprintf(`监控数据: %s - %s（%s）
+当前: %.2f%s
+平均: %.2f%s
+最高: %.2f%s
+最低: %.2f%s
+数据点: %d 个`,
+		server.Name, metricLabel, period,
+		current, unit,
+		avgVal, unit,
+		maxVal, unit,
+		minVal, unit,
+		len(dataPoints))
+}
+
+// getServiceStatus 获取服务监控状态
+func getServiceStatus() string {
+	services, err := GetServiceList()
+	if err != nil {
+		return fmt.Sprintf("获取服务状态失败: %v", err)
+	}
+
+	if len(services) == 0 {
+		return "当前没有配置服务监控\n请在哪吒面板中添加服务监控"
+	}
+
+	// 服务类型映射
+	typeNames := map[uint]string{
+		0: "TCP",
+		1: "HTTP",
+		2: "HTTPS",
+		3: "DNS",
+		4: "端口",
+		5: "Ping",
+	}
+
+	online := 0
+	offline := 0
+	result := "服务监控状态：\n"
+
+	for _, s := range services {
+		status := "🟢"
+		if !s.Online {
+			status = "🔴"
+			offline++
+		} else {
+			online++
+		}
+
+		typeName := typeNames[s.Type]
+		if typeName == "" {
+			typeName = "未知"
+		}
+
+		delayStr := "N/A"
+		if s.AvgDelay > 0 {
+			if s.AvgDelay > 1000 {
+				delayStr = fmt.Sprintf("%.1fs", s.AvgDelay/1000)
+			} else {
+				delayStr = fmt.Sprintf("%.0fms", s.AvgDelay)
+			}
+		}
+
+		result += fmt.Sprintf("%s [%s] %s → %s (%s)\n", status, typeName, s.Name, s.Target, delayStr)
+	}
+
+	result += fmt.Sprintf("\n总计: %d | 正常: %d | 异常: %d", len(services), online, offline)
+	return result
 }
