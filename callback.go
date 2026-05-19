@@ -351,8 +351,15 @@ func processUserMessage(content, userID string) string {
 - NAT 添加：分步添加穿透配置
 - NAT 启用/禁用 ID：启用或禁用穿透
 - NAT 删除 ID：删除穿透配置（需确认）
-- NAT 修改 ID 内网地址:端口 [服务器名]：修改穿透配置（地址和/或服务器）
-- NAT 修改 ID - 服务器名：只修改服务器
+- NAT 修改 ID 内网地址:端口 [服务器名]
+- DDNS：查看DDNS配置列表
+- DDNS 添加：分步添加DDNS配置
+- DDNS 删除 ID：删除DDNS配置（需确认）
+- DDNS 启用/禁用 ID：启用或禁用IPv4/IPv6
+- DDNS 提供商：查看支持的DDNS提供商
+- 通知：查看通知渠道列表
+- 通知 添加 名称 URL：快速添加通知渠道
+- 通知 删除 ID：删除通知渠道（需确认）
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
 - 确认/取消：通用确认机制
 
@@ -391,6 +398,34 @@ func processUserMessage(content, userID string) string {
 			return updateNatCmd(content)
 		}
 
+		// DDNS 命令
+		if lower == "ddns" || lower == "ddns 列表" {
+			return getDDNSList()
+		}
+		if lower == "ddns 提供商" || lower == "ddns providers" {
+			return getDDNSProviders()
+		}
+		if strings.HasPrefix(lower, "ddns 添加") {
+			return startDDNSAdd(userID, content)
+		}
+		if strings.HasPrefix(lower, "ddns 删除") {
+			return startDDNSDelete(userID, content)
+		}
+		if strings.HasPrefix(lower, "ddns 启用") || strings.HasPrefix(lower, "ddns 禁用") {
+			return toggleDDNSCmd(content)
+		}
+
+		// 通知渠道命令
+		if lower == "通知" || lower == "通知 列表" || lower == "notification" {
+			return getNotificationList()
+		}
+		if strings.HasPrefix(lower, "通知 添加") || strings.HasPrefix(lower, "通知 新增") {
+			return startNotificationAdd(userID, content)
+		}
+		if strings.HasPrefix(lower, "通知 删除") {
+			return startNotificationDelete(userID, content)
+		}
+
 		// 标签/备注命令
 		if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签\t") ||
 			strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
@@ -404,6 +439,16 @@ func processUserMessage(content, userID string) string {
 		if hasPending && action.Type == "nat_add" {
 			if _, hasStep := action.Data["step"]; hasStep {
 				return handleNatAddStep(userID, content)
+			}
+		}
+		if hasPending && action.Type == "ddns_add" {
+			if _, hasStep := action.Data["step"]; hasStep {
+				return handleDDNSAddStep(userID, content)
+			}
+		}
+		if hasPending && action.Type == "notification_add" {
+			if _, hasStep := action.Data["step"]; hasStep {
+				return handleNotificationAddStep(userID, content)
 			}
 		}
 
@@ -1017,6 +1062,80 @@ func handleConfirmAction(content, userID string) string {
 			return fmt.Sprintf("重启 %s 失败: %v", serverName, err)
 		}
 		return fmt.Sprintf("✅ 已向 %s 发送重启指令", serverName)
+
+	case "ddns_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteDDNS(id)
+		if err != nil {
+			return fmt.Sprintf("删除DDNS失败: %v", err)
+		}
+		return fmt.Sprintf("✅ DDNS 配置已删除: %s", name)
+
+	case "ddns_add":
+		data := action.Data
+		domains := []string{}
+		if d, ok := data["domains"].(string); ok {
+			domains = strings.Split(d, ",")
+		}
+		enableIPv4 := true
+		enableIPv6 := false
+		if v, ok := data["enable_ipv4"].(bool); ok {
+			enableIPv4 = v
+		}
+		if v, ok := data["enable_ipv6"].(bool); ok {
+			enableIPv6 = v
+		}
+		err := AddDDNS(
+			data["name"].(string),
+			data["provider"].(string),
+			data["access_id"].(string),
+			data["access_secret"].(string),
+			domains,
+			enableIPv4,
+			enableIPv6,
+		)
+		if err != nil {
+			return fmt.Sprintf("添加DDNS失败: %v", err)
+		}
+		return fmt.Sprintf("✅ DDNS 配置已创建\n名称: %s\n提供商: %s\n域名: %s",
+			data["name"], data["provider"], data["domains"])
+
+	case "notification_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteNotification(id)
+		if err != nil {
+			return fmt.Sprintf("删除通知渠道失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 通知渠道已删除: %s", name)
+
+	case "notification_add":
+		data := action.Data
+		err := AddNotification(
+			data["name"].(string),
+			data["url"].(string),
+			uint(1), // POST
+			uint(1), // JSON
+			"Content-Type: application/json",
+			data["request_body"].(string),
+		)
+		if err != nil {
+			return fmt.Sprintf("添加通知渠道失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 通知渠道已创建\n名称: %s\nURL: %s", data["name"], data["url"])
 	}
 
 	return "操作异常"
@@ -1365,4 +1484,415 @@ func getServiceStatus() string {
 
 	result += fmt.Sprintf("\n总计: %d | 正常: %d | 异常: %d", len(services), online, offline)
 	return result
+}
+
+
+
+// ========== DDNS 管理命令 ==========
+
+// getDDNSList 获取 DDNS 配置列表
+func getDDNSList() string {
+	ddnsList, err := GetDDNSList()
+	if err != nil {
+		return fmt.Sprintf("获取DDNS列表失败: %v", err)
+	}
+	if len(ddnsList) == 0 {
+		return "当前没有DDNS配置\n发送 DDNS 添加 开始配置"
+	}
+
+	result := "DDNS 配置列表：\n"
+	for _, d := range ddnsList {
+		id := uint(0)
+		if v, ok := d["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := d["name"].(string)
+		provider, _ := d["provider"].(string)
+
+		// 域名列表
+		domainStr := ""
+		if domains, ok := d["domains"].([]interface{}); ok {
+			for i, dom := range domains {
+				if i > 0 {
+					domainStr += ", "
+				}
+				domainStr += fmt.Sprintf("%v", dom)
+			}
+		}
+
+		ipv4 := "❌"
+		if v, ok := d["enable_ipv4"].(bool); ok && v {
+			ipv4 = "✅"
+		}
+		ipv6 := "❌"
+		if v, ok := d["enable_ipv6"].(bool); ok && v {
+			ipv6 = "✅"
+		}
+
+		result += fmt.Sprintf("- [%d] %s (%s)\n  域名: %s\n  IPv4: %s | IPv6: %s\n",
+			id, name, provider, domainStr, ipv4, ipv6)
+	}
+	result += "\n操作：DDNS 添加 | DDNS 删除 ID | DDNS 启用/禁用 ID"
+	return result
+}
+
+// getDDNSProviders 获取 DDNS 提供商列表
+func getDDNSProviders() string {
+	providers, err := GetDDNSProviders()
+	if err != nil {
+		return fmt.Sprintf("获取DDNS提供商列表失败: %v", err)
+	}
+	if len(providers) == 0 {
+		return "未获取到DDNS提供商列表"
+	}
+
+	result := "支持的DDNS提供商：\n"
+	for _, p := range providers {
+		result += fmt.Sprintf("- %s\n", p)
+	}
+	result += "\n使用 DDNS 添加 开始配置"
+	return result
+}
+
+// startDDNSAdd 开始添加 DDNS 配置（分步引导）
+func startDDNSAdd(userID, content string) string {
+	// 分步引导
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "ddns_add",
+		Data: map[string]interface{}{"step": float64(0)},
+	}
+	pendingMutex.Unlock()
+
+	return "开始添加 DDNS 配置：\n\n第 1 步：请输入配置名称\n（如：我的DDNS、主域名解析）"
+}
+
+// handleDDNSAddStep 处理 DDNS 添加的分步输入
+func handleDDNSAddStep(userID, content string) string {
+	pendingMutex.Lock()
+	action := pendingActions[userID]
+	pendingMutex.Unlock()
+
+	data := action.Data
+	step := int(data["step"].(float64))
+
+	switch step {
+	case 0: // 输入名称
+		data["name"] = content
+		data["step"] = float64(1)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "ddns_add", Data: data}
+		pendingMutex.Unlock()
+
+		// 获取提供商列表提示
+		providers, err := GetDDNSProviders()
+		hint := "第 2 步：请输入DDNS提供商\n"
+		if err == nil && len(providers) > 0 {
+			hint += "支持: " + strings.Join(providers, ", ")
+		} else {
+			hint += "（如：aliyun, cloudflare, dnspod, namesilo 等）"
+		}
+		return hint
+
+	case 1: // 输入提供商
+		data["provider"] = strings.TrimSpace(content)
+		data["step"] = float64(2)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "ddns_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 3 步：请输入 Access ID（API Key）"
+
+	case 2: // 输入 Access ID
+		data["access_id"] = strings.TrimSpace(content)
+		data["step"] = float64(3)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "ddns_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 4 步：请输入 Access Secret（API Secret）"
+
+	case 3: // 输入 Access Secret
+		data["access_secret"] = strings.TrimSpace(content)
+		data["step"] = float64(4)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "ddns_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 5 步：请输入域名（多个域名用逗号分隔）\n（如：example.com 或 a.example.com,b.example.com）"
+
+	case 4: // 输入域名 → 确认
+		data["domains"] = strings.TrimSpace(content)
+		data["enable_ipv4"] = true
+		data["enable_ipv6"] = false
+		// 删除 step 字段，进入确认阶段
+		delete(data, "step")
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "ddns_add", Data: data}
+		pendingMutex.Unlock()
+
+		return fmt.Sprintf(`请确认 DDNS 配置：
+名称: %s
+提供商: %s
+域名: %s
+IPv4: ✅ | IPv6: ❌
+
+回复 确认 创建，回复 取消 放弃`,
+			data["name"], data["provider"], data["domains"])
+	}
+	return "配置异常，请重新发送 DDNS 添加"
+}
+
+// startDDNSDelete 开始删除 DDNS（需确认）
+func startDDNSDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: DDNS 删除 ID\n发送 DDNS 查看配置列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 DDNS 查看配置列表"
+	}
+
+	// 查找配置名称
+	ddnsList, err := GetDDNSList()
+	if err != nil {
+		return fmt.Sprintf("查询DDNS列表失败: %v", err)
+	}
+	var ddnsName string
+	found := false
+	for _, d := range ddnsList {
+		if uint(d["id"].(float64)) == uint(id) {
+			ddnsName, _ = d["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的DDNS配置\n发送 DDNS 查看列表", id)
+	}
+
+	// 保存待确认
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "ddns_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": ddnsName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除 DDNS 配置 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, ddnsName)
+}
+
+// toggleDDNSCmd 启用/禁用 DDNS 的 IPv4/IPv6
+// 格式: DDNS 启用 ID 或 DDNS 禁用 ID
+func toggleDDNSCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: DDNS 启用 ID / DDNS 禁用 ID\n启用=开启IPv4，禁用=关闭IPv4\n发送 DDNS 查看配置列表"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字"
+	}
+
+	enabled := strings.Contains(parts[1], "启用")
+	updateData := map[string]interface{}{
+		"enable_ipv4": enabled,
+	}
+
+	err = UpdateDDNS(uint(id), updateData)
+	if err != nil {
+		return fmt.Sprintf("操作失败: %v", err)
+	}
+
+	action := "启用IPv4"
+	if !enabled {
+		action = "禁用IPv4"
+	}
+	return fmt.Sprintf("✅ DDNS [%d] 已%s", id, action)
+}
+
+// ========== 通知渠道管理命令 ==========
+
+// getNotificationList 获取通知渠道列表
+func getNotificationList() string {
+	notifications, err := GetNotificationList()
+	if err != nil {
+		return fmt.Sprintf("获取通知渠道列表失败: %v", err)
+	}
+	if len(notifications) == 0 {
+		return "当前没有通知渠道配置\n发送 通知 添加 开始配置"
+	}
+
+	result := "通知渠道列表：\n"
+	for _, n := range notifications {
+		id := uint(0)
+		if v, ok := n["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := n["name"].(string)
+		notifyURL, _ := n["url"].(string)
+
+		// 截断 URL 显示
+		displayURL := notifyURL
+		if len(displayURL) > 50 {
+			displayURL = displayURL[:47] + "..."
+		}
+
+		result += fmt.Sprintf("- [%d] %s\n  URL: %s\n", id, name, displayURL)
+	}
+	result += "\n操作：通知 添加 名称 URL | 通知 删除 ID"
+	return result
+}
+
+// startNotificationAdd 开始添加通知渠道
+// 支持快速模式: 通知 添加 名称 URL
+// 或分步引导
+func startNotificationAdd(userID, content string) string {
+	parts := strings.Fields(content)
+	// 快速模式: 通知 添加 名称 URL
+	if len(parts) >= 4 {
+		name := parts[2]
+		notifyURL := parts[3]
+		if !strings.HasPrefix(notifyURL, "http") {
+			return "URL 格式错误，请以 http:// 或 https:// 开头"
+		}
+		// 默认请求体模板
+		defaultBody := `{"msgtype":"text","text":{"content":"${msg}"}}`
+
+		// 保存待确认
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{
+			Type: "notification_add",
+			Data: map[string]interface{}{
+				"name":         name,
+				"url":          notifyURL,
+				"request_body": defaultBody,
+			},
+		}
+		pendingMutex.Unlock()
+
+		return fmt.Sprintf(`请确认通知渠道配置：
+名称: %s
+URL: %s
+请求体: %s
+
+回复 确认 创建，回复 取消 放弃
+提示: 创建后可在哪吒面板中修改请求体模板`, name, notifyURL, defaultBody)
+	}
+
+	// 分步引导
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "notification_add",
+		Data: map[string]interface{}{"step": float64(0)},
+	}
+	pendingMutex.Unlock()
+
+	return "开始添加通知渠道：\n\n第 1 步：请输入通知名称\n（如：钉钉通知、企微机器人）"
+}
+
+// handleNotificationAddStep 处理通知渠道添加的分步输入
+func handleNotificationAddStep(userID, content string) string {
+	pendingMutex.Lock()
+	action := pendingActions[userID]
+	pendingMutex.Unlock()
+
+	data := action.Data
+	step := int(data["step"].(float64))
+
+	switch step {
+	case 0: // 输入名称
+		data["name"] = content
+		data["step"] = float64(1)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "notification_add", Data: data}
+		pendingMutex.Unlock()
+		return "第 2 步：请输入 Webhook URL\n（如：https://oapi.dingtalk.com/robot/send?access_token=xxx）"
+
+	case 1: // 输入 URL
+		notifyURL := strings.TrimSpace(content)
+		if !strings.HasPrefix(notifyURL, "http") {
+			return "URL 格式错误，请以 http:// 或 https:// 开头\n请重新输入 URL"
+		}
+		data["url"] = notifyURL
+		data["step"] = float64(2)
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "notification_add", Data: data}
+		pendingMutex.Unlock()
+		return `第 3 步：请输入请求体模板（JSON格式）
+使用 ${msg} 作为消息占位符
+
+示例（钉钉）:
+{"msgtype":"text","text":{"content":"${msg}"}}
+
+直接回复模板，或回复 默认 使用上述模板`
+
+	case 2: // 输入请求体模板 → 确认
+		body := strings.TrimSpace(content)
+		if body == "默认" || body == "default" {
+			body = `{"msgtype":"text","text":{"content":"${msg}"}}`
+		}
+		data["request_body"] = body
+		// 删除 step 字段，进入确认阶段
+		delete(data, "step")
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{Type: "notification_add", Data: data}
+		pendingMutex.Unlock()
+
+		return fmt.Sprintf(`请确认通知渠道配置：
+名称: %s
+URL: %s
+请求体: %s
+
+回复 确认 创建，回复 取消 放弃`,
+			data["name"], data["url"], body)
+	}
+	return "配置异常，请重新发送 通知 添加"
+}
+
+// startNotificationDelete 开始删除通知渠道（需确认）
+func startNotificationDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 通知 删除 ID\n发送 通知 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 通知 查看列表"
+	}
+
+	// 查找名称
+	notifications, err := GetNotificationList()
+	if err != nil {
+		return fmt.Sprintf("查询通知列表失败: %v", err)
+	}
+	var notifyName string
+	found := false
+	for _, n := range notifications {
+		if uint(n["id"].(float64)) == uint(id) {
+			notifyName, _ = n["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的通知渠道\n发送 通知 查看列表", id)
+	}
+
+	// 保存待确认
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "notification_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": notifyName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除通知渠道 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, notifyName)
 }

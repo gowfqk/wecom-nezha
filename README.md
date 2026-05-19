@@ -15,6 +15,12 @@
 - ✅ **NAT 穿透管理**：
   - 查看、添加、删除、启用/禁用 NAT 配置
   - 添加时分步引导，删除/修改需确认
+- ✅ **DDNS 管理**：
+  - 查看、添加、删除、启用/禁用 DDNS 配置
+  - 支持查看提供商列表，分步引导添加
+- ✅ **通知渠道管理**：
+  - 查看、添加、删除通知渠道
+  - 支持快速添加和分步引导两种模式
 - ✅ **企业微信回调**：支持明文模式和加密模式
 - ✅ **健康检查**：`/healthz`（存活）、`/readyz`（就绪）
 - ✅ **Docker 部署**：支持多架构构建（amd64、arm64）
@@ -209,6 +215,16 @@ curl -X POST https://your-domain.com/wecomchan \
 | `NAT 删除 <ID>` | 删除 NAT 配置（需确认） |
 | `NAT 修改 <ID> <内网地址:端口> [服务器名]` | 修改 NAT 配置（地址和/或服务器） |
 | `NAT 修改 <ID> - <服务器名>` | 只修改 NAT 的服务器 |
+| `DDNS` / `DDNS 列表` | 查看 DDNS 配置列表 |
+| `DDNS 提供商` | 查看支持的 DDNS 提供商 |
+| `DDNS 添加` | 分步添加 DDNS 配置 |
+| `DDNS 删除 <ID>` | 删除 DDNS 配置（需确认） |
+| `DDNS 启用 <ID>` | 启用 DDNS 的 IPv4 |
+| `DDNS 禁用 <ID>` | 禁用 DDNS 的 IPv4 |
+| `通知` / `notification` | 查看通知渠道列表 |
+| `通知 添加 <名称> <URL>` | 快速添加通知渠道 |
+| `通知 添加` | 分步添加通知渠道 |
+| `通知 删除 <ID>` | 删除通知渠道（需确认） |
 | `标签 <服务器名> <标签内容>` | 更新服务器私有备注/标签 |
 | `确认` / `取消` | 确认或取消待执行的操作 |
 
@@ -247,10 +263,9 @@ curl -X POST https://your-domain.com/wecomchan \
 ├── utils.go            # 工具函数
 ├── utils_test.go       # 工具函数测试
 ├── wecom_api.go        # 企业微信 API 封装
-├── nezha_api.go        # 哪吒监控 API 封装
+├── nezha_api.go        # 哪吒监控 API 封装（服务器/NAT/DDNS/通知）
 ├── handlers.go         # HTTP 处理器（/wecomchan, /webhook, /mail）
 ├── callback.go         # 企业微信回调处理（明文/加密模式）
-├── wecomchan.go        # 遗留入口文件（已重构）
 ├── docker-compose.yml  # Docker Compose 配置
 ├── Dockerfile
 ├── docs/               # 文档
