@@ -6,11 +6,21 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 var nezhaAccessToken = ""
 var nezhaTokenExpire time.Time
+
+// 服务器列表短期缓存（减少重复 API 调用）
+var serverListCache struct {
+	sync.RWMutex
+	servers    []NezhaServer
+	expireTime time.Time
+}
+
+const serverListCacheTTL = 10 * time.Second
 
 func nezhaRequest(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
@@ -148,9 +158,18 @@ func nezhaFullLogin() error {
 	return nil
 }
 
-// GetNezhaServerList 获取服务器列表
+// GetNezhaServerList 获取服务器列表（带短期缓存）
 func GetNezhaServerList() ([]NezhaServer, error) {
-	// 先登录获取 token
+	// 检查缓存
+	serverListCache.RLock()
+	if !serverListCache.expireTime.IsZero() && time.Now().Before(serverListCache.expireTime) {
+		servers := serverListCache.servers
+		serverListCache.RUnlock()
+		return servers, nil
+	}
+	serverListCache.RUnlock()
+
+	// 缓存过期，重新获取
 	if err := NezhaLogin(); err != nil {
 		return nil, err
 	}
@@ -210,22 +229,68 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		}
 	}
 
+	// 写入缓存
+	serverListCache.Lock()
+	serverListCache.servers = servers
+	serverListCache.expireTime = time.Now().Add(serverListCacheTTL)
+	serverListCache.Unlock()
+
 	return servers, nil
 }
 
-// GetNezhaServerByName 根据名称获取服务器
-func GetNezhaServerByName(name string) (*NezhaServer, error) {
+// FindServerResult 服务器查找结果
+type FindServerResult struct {
+	Server  *NezhaServer   // 唯一匹配时返回
+	Matched []NezhaServer  // 多个匹配时返回列表
+}
+
+// FindServer 统一的服务器查找函数（精确匹配 + 模糊匹配）
+// matchTag: 是否同时匹配 Note 和 Tag 字段
+func FindServer(name string, matchTag bool) (*FindServerResult, error) {
 	servers, err := GetNezhaServerList()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, s := range servers {
-		if s.Name == name {
-			return &s, nil
+	// 精确匹配
+	for i := range servers {
+		if servers[i].Name == name {
+			return &FindServerResult{Server: &servers[i]}, nil
 		}
 	}
 
+	// 模糊匹配
+	lowerName := strings.ToLower(name)
+	var matched []NezhaServer
+	for _, s := range servers {
+		if strings.Contains(strings.ToLower(s.Name), lowerName) {
+			matched = append(matched, s)
+		} else if matchTag {
+			if strings.Contains(strings.ToLower(s.Note), lowerName) ||
+				strings.Contains(strings.ToLower(s.Tag), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+	}
+
+	if len(matched) == 0 {
+		return &FindServerResult{}, nil
+	}
+	if len(matched) == 1 {
+		return &FindServerResult{Server: &matched[0]}, nil
+	}
+	return &FindServerResult{Matched: matched}, nil
+}
+
+// GetNezhaServerByName 根据名称精确获取服务器
+func GetNezhaServerByName(name string) (*NezhaServer, error) {
+	result, err := FindServer(name, false)
+	if err != nil {
+		return nil, err
+	}
+	if result.Server != nil {
+		return result.Server, nil
+	}
 	return nil, fmt.Errorf("未找到服务器: %s", name)
 }
 
