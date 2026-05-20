@@ -1405,29 +1405,41 @@ func getServerMetricsCmd(content string) string {
 	avgVal := sum / float64(len(dataPoints))
 	current := dataPoints[len(dataPoints)-1].Avg
 
-	// 格式化输出
-	unit := ""
-	if strings.Contains(metric, "speed") {
-		unit = " B/s"
-	} else if strings.Contains(metric, "transfer") {
-		unit = " B"
-	} else if strings.Contains(metric, "load") {
-		unit = ""
-	} else {
-		unit = "%"
+	// 格式化输出：根据指标类型选择合适的显示方式
+	formatVal := func(v float64) string {
+		switch {
+		case metric == "cpu":
+			// CPU 使用率，API 返回 0-100 的百分比
+			return fmt.Sprintf("%.2f%%", v)
+		case metric == "memory" || metric == "disk" || metric == "swap":
+			// 内存/磁盘/Swap：API 可能返回百分比(0-100)或字节数(>100)
+			if v > 100 {
+				// 返回的是字节数，格式化为可读大小
+				return formatBytes(uint64(v))
+			}
+			return fmt.Sprintf("%.2f%%", v)
+		case strings.Contains(metric, "speed"):
+			return formatSpeed(v)
+		case strings.Contains(metric, "transfer"):
+			return formatBytes(uint64(v))
+		case strings.Contains(metric, "load"):
+			return fmt.Sprintf("%.2f", v)
+		default:
+			return fmt.Sprintf("%.2f", v)
+		}
 	}
 
 	return fmt.Sprintf(`监控数据: %s - %s（%s）
-当前: %.2f%s
-平均: %.2f%s
-最高: %.2f%s
-最低: %.2f%s
+当前: %s
+平均: %s
+最高: %s
+最低: %s
 数据点: %d 个`,
 		server.Name, metricLabel, period,
-		current, unit,
-		avgVal, unit,
-		maxVal, unit,
-		minVal, unit,
+		formatVal(current),
+		formatVal(avgVal),
+		formatVal(maxVal),
+		formatVal(minVal),
 		len(dataPoints))
 }
 
