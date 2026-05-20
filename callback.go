@@ -1405,6 +1405,17 @@ func getServerMetricsCmd(content string) string {
 	avgVal := sum / float64(len(dataPoints))
 	current := dataPoints[len(dataPoints)-1].Avg
 
+	// 获取总量用于计算占比
+	var total uint64
+	switch metric {
+	case "memory":
+		total = server.Host.MemTotal
+	case "disk":
+		total = server.Host.DiskTotal
+	case "swap":
+		total = server.Host.SwapTotal
+	}
+
 	// 格式化输出：根据指标类型选择合适的显示方式
 	formatVal := func(v float64) string {
 		switch {
@@ -1413,8 +1424,11 @@ func getServerMetricsCmd(content string) string {
 			return fmt.Sprintf("%.2f%%", v)
 		case metric == "memory" || metric == "disk" || metric == "swap":
 			// 内存/磁盘/Swap：API 可能返回百分比(0-100)或字节数(>100)
-			if v > 100 {
-				// 返回的是字节数，格式化为可读大小
+			if v > 100 && total > 0 {
+				// 返回的是字节数，同时显示已用量和百分比
+				pct := v / float64(total) * 100
+				return fmt.Sprintf("%s / %s (%.1f%%)", formatBytes(uint64(v)), formatBytes(total), pct)
+			} else if v > 100 {
 				return formatBytes(uint64(v))
 			}
 			return fmt.Sprintf("%.2f%%", v)
