@@ -736,9 +736,66 @@ func ToggleNat(id uint, enabled bool) error {
 
 
 // MetricsDataPoint 监控数据点
+// 兼容两种 API 响应格式：
+//   格式1（嵌套）: {"data": {"data_points": [{"ts": 123, "value": 45.2}]}}
+//   格式2（扁平）: {"data": [{"created_at": 123, "avg_val": 45.2}]}
 type MetricsDataPoint struct {
-	Timestamp int64   `json:"created_at"`
-	Avg       float64 `json:"avg_val"`
+	Timestamp int64   // 时间戳
+	Avg       float64 // 数值
+}
+
+func (m *MetricsDataPoint) UnmarshalJSON(data []byte) error {
+	// 尝试多种字段名组合
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// 时间戳：ts > created_at > timestamp
+	if v, ok := raw["ts"]; ok {
+		m.Timestamp = toInt64(v)
+	} else if v, ok := raw["created_at"]; ok {
+		m.Timestamp = toInt64(v)
+	} else if v, ok := raw["timestamp"]; ok {
+		m.Timestamp = toInt64(v)
+	}
+
+	// 数值：value > avg_val > avg
+	if v, ok := raw["value"]; ok {
+		m.Avg = toFloat64(v)
+	} else if v, ok := raw["avg_val"]; ok {
+		m.Avg = toFloat64(v)
+	} else if v, ok := raw["avg"]; ok {
+		m.Avg = toFloat64(v)
+	}
+
+	return nil
+}
+
+func toInt64(v interface{}) int64 {
+	switch val := v.(type) {
+	case float64:
+		return int64(val)
+	case int64:
+		return val
+	case json.Number:
+		n, _ := val.Int64()
+		return n
+	}
+	return 0
+}
+
+func toFloat64(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int64:
+		return float64(val)
+	case json.Number:
+		n, _ := val.Float64()
+		return n
+	}
+	return 0
 }
 
 // GetServerMetrics 获取服务器监控历史数据
@@ -773,31 +830,39 @@ func GetServerMetrics(serverID uint, metric string, period string) ([]MetricsDat
 		return nil, fmt.Errorf("API请求失败（HTTP %d）: %s", resp.StatusCode, raw)
 	}
 
-	var result struct {
-		Success bool `json:"success"`
+	// 先尝试嵌套格式（官方文档格式）:
+	// {"success":true,"data":{"data_points":[{"ts":123,"value":45.2}]}}
+	var nestedResult struct {
+		Success bool   `json:"success"`
 		Error   string `json:"error"`
+		Data    struct {
+			DataPoints []MetricsDataPoint `json:"data_points"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &nestedResult); err == nil && nestedResult.Success && len(nestedResult.Data.DataPoints) > 0 {
+		return nestedResult.Data.DataPoints, nil
+	}
+
+	// 再尝试扁平格式:
+	// {"success":true,"data":[{"created_at":123,"avg_val":45.2}]}
+	var flatResult struct {
+		Success bool               `json:"success"`
+		Error   string             `json:"error"`
 		Data    []MetricsDataPoint `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		// 尝试嵌套格式
-		var result2 struct {
-			Success bool   `json:"success"`
-			Error   string `json:"error"`
-			Data    struct {
-				DataPoints []MetricsDataPoint `json:"data_points"`
-			} `json:"data"`
+	if err := json.Unmarshal(body, &flatResult); err != nil {
+		raw := string(body)
+		if len(raw) > 200 {
+			raw = raw[:200]
 		}
-		if err2 := json.Unmarshal(body, &result2); err2 != nil {
-			return nil, fmt.Errorf("解析监控数据失败: %v", err)
-		}
-		return result2.Data.DataPoints, nil
+		return nil, fmt.Errorf("解析监控数据失败: %s", raw)
 	}
 
-	if !result.Success {
-		return nil, fmt.Errorf("获取监控数据失败: %s", result.Error)
+	if !flatResult.Success {
+		return nil, fmt.Errorf("获取监控数据失败: %s", flatResult.Error)
 	}
 
-	return result.Data, nil
+	return flatResult.Data, nil
 }
 
 // ServiceInfo 服务监控信息
