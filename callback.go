@@ -917,6 +917,14 @@ func startNatAdd(userID, content string) string {
 
 // handleNatAddStep 处理 NAT 添加的分步输入
 func handleNatAddStep(userID, content string) string {
+	// 允许用户中途退出
+	if content == "取消" || content == "退出" || content == "cancel" {
+		pendingMutex.Lock()
+		delete(pendingActions, userID)
+		pendingMutex.Unlock()
+		return "已取消 NAT 添加"
+	}
+
 	pendingMutex.Lock()
 	action := pendingActions[userID]
 	pendingMutex.Unlock()
@@ -1595,6 +1603,14 @@ func startDDNSAdd(userID, content string) string {
 
 // handleDDNSAddStep 处理 DDNS 添加的分步输入
 func handleDDNSAddStep(userID, content string) string {
+	// 允许用户中途退出
+	if content == "取消" || content == "退出" || content == "cancel" {
+		pendingMutex.Lock()
+		delete(pendingActions, userID)
+		pendingMutex.Unlock()
+		return "已取消 DDNS 添加"
+	}
+
 	pendingMutex.Lock()
 	action := pendingActions[userID]
 	pendingMutex.Unlock()
@@ -1822,6 +1838,14 @@ URL: %s
 
 // handleNotificationAddStep 处理通知渠道添加的分步输入
 func handleNotificationAddStep(userID, content string) string {
+	// 允许用户中途退出
+	if content == "取消" || content == "退出" || content == "cancel" {
+		pendingMutex.Lock()
+		delete(pendingActions, userID)
+		pendingMutex.Unlock()
+		return "已取消通知渠道添加"
+	}
+
 	pendingMutex.Lock()
 	action := pendingActions[userID]
 	pendingMutex.Unlock()
