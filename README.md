@@ -1,13 +1,18 @@
 # wecom-nezha
 
-一个将企业微信与哪吒监控深度集成的服务。支持企业微信消息推送（文本/Markdown/图片）、邮件发送，在企业微信中直接查询服务器状态、管理 NAT 穿透、获取安装命令、远程重启，支持明文/加密回调模式，开箱即用的 Docker 部署方案。
+一个将企业微信与哪吒监控深度集成的服务，同时支持 Telegram Bot。支持企业微信消息推送（文本/Markdown/图片）、邮件发送，在企业微信/Telegram 中直接查询服务器状态、管理 NAT 穿透、获取安装命令、远程重启，支持明文/加密回调模式，开箱即用的 Docker 部署方案。
 
 ## 功能特性
 
 - ✅ **企业微信消息推送**：文本、Markdown、图片、链接，支持 Header/Query 认证（Webhook 风格）
 - ✅ **企业微信邮件发送**：支持抄送、密送、附件
+- ✅ **Telegram Bot 集成**：
+  - Inline Keyboard 交互：服务器列表点击查看详情
+  - Callback Query：一键确认操作
+  - 命令支持：`/status`、`/list`、`/offline`、`/service`、`/help`
+  - 复用所有哪吒监控命令
 - ✅ **哪吒监控集成**：
-  - 接收企业微信消息，查询服务器状态
+  - 接收企业微信/Telegram 消息，查询服务器状态
   - 支持关键词：`状态`、`离线`、`列表`、`帮助`
   - 支持服务器名称精确/模糊查询
   - 支持 Agent 安装命令（Linux / Windows / Docker）
@@ -27,7 +32,16 @@
 
 ## 快速开始
 
-### Docker Compose（推荐）
+### 1. 创建 Telegram Bot（可选）
+
+1. 打开 Telegram，搜索 [@BotFather](https://t.me/BotFather)
+2. 发送 `/newbot`
+3. 按提示设置：
+   - Bot 名称（如 `Nezha 监控 Bot`）
+   - Bot 用户名（如 `nezha_monitor_bot`，必须以 `bot` 结尾）
+4. 获取 Token（格式类似 `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`）
+
+### 2. Docker Compose（推荐）
 
 ```yaml
 services:
@@ -39,18 +53,19 @@ services:
     environment:
       - SENDKEY=${SENDKEY:-set_a_sendkey}
       - WECOM_CID=${WECOM_CID}
-      - WECOM_SECRET=${WECOM_SECRET}
-      - WECOM_AID=${WECOM_AID}
+      - WECOM_SECRET=***      - WECOM_AID=${WECOM_AID}
       - WECOM_TOUID=${WECOM_TOUID:-@all}
-      - WECOM_TOKEN=${WECOM_TOKEN}
-      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
+      - WECOM_TOKEN=***      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
       - NEZHA_URL=${NEZHA_URL}
       - NEZHA_USERNAME=${NEZHA_USERNAME}
-      - NEZHA_PASSWORD=${NEZHA_PASSWORD}
+      - NEZHA_PASSWORD=${NEZH...D}
       - CACHE_TYPE=${CACHE_TYPE:-memory}
       - REDIS_STAT=${REDIS_STAT:-OFF}
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDI...D}
+      - TELEGRAM_BOT_TOKEN=${TELE...N}
+      - TELEGRAM_WEBHOOK_SECRET=${TELE...T}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -62,21 +77,36 @@ services:
       start_period: 10s
 ```
 
-### Docker 运行
+### 3. Docker 运行
 
 ```bash
 docker run -d -p 8080:8080 \
   -e SENDKEY=your_sendkey \
   -e WECOM_CID=your_corpid \
-  -e WECOM_SECRET=your_secret \
+  -e WECOM_SECRET=*** \
   -e WECOM_AID=your_agentid \
-  -e WECOM_TOKEN=your_callback_token \
+  -e WECOM_TOKEN=your_c...oken \
   -e WECOM_ENCODING_AES_KEY=your_aes_key \
   -e NEZHA_URL=https://nezha.example.com \
   -e NEZHA_USERNAME=admin \
-  -e NEZHA_PASSWORD=your_password \
+  -e NEZHA_PASSWORD=*** \
   -e CACHE_TYPE=memory \
+  -e TELEGRAM_BOT_TOKEN=your_t...oken \
+  -e TELEGRAM_WEBHOOK_SECRET=your_w...cret \
+  -e TELEGRAM_ALLOWED_USERS=123456789,987654321 \
   gowfqk/wecom-nezha:latest
+```
+
+### 4. 设置 Telegram Webhook
+
+```bash
+# 设置 Webhook
+curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://your-domain.com/telegram/webhook"}'
+
+# 验证 Webhook
+curl "https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo"
 ```
 
 ## API 接口
@@ -191,42 +221,40 @@ curl -X POST https://your-domain.com/wecomchan \
 3. 配置环境变量 `WECOM_TOKEN`（回调Token）
 4. 如使用加密模式，还需配置 `WECOM_ENCODING_AES_KEY`（EncodingAESKey）
 
+---
+
+### Telegram Bot - `/telegram/webhook`
+
+**请求方式**：`POST`
+
+用于接收 Telegram 消息和回调查询，提供哪吒监控服务器状态查询和管理功能。
+
+**配置步骤**：
+1. 向 [@BotFather](https://t.me/BotFather) 创建 Bot，获取 Token
+2. 配置环境变量 `TELEGRAM_BOT_TOKEN`
+3. （可选）配置 `TELEGRAM_WEBHOOK_SECRET` 增强安全性
+4. （可选）配置 `TELEGRAM_ALLOWED_USERS` 限制访问用户（逗号分隔的用户ID）
+5. 设置 Webhook URL：`https://your-domain.com/telegram/webhook`
+
 **支持的命令**：
 
 | 命令 | 说明 |
 |------|------|
-| `帮助` / `help` / `?` | 显示帮助信息 |
-| `状态` / `状态查询` | 查看服务器在线状态摘要 |
-| `离线` | 查看离线服务器列表 |
-| `列表` / `list` | 查看所有服务器 |
+| `/start` / `/help` | 显示帮助信息 |
+| `/status` / `状态` | 查看服务器在线状态摘要 |
+| `/list` / `列表` | 查看所有服务器（带 Inline Keyboard） |
+| `/offline` / `离线` | 查看离线服务器列表 |
+| `/service` / `服务` | 查看服务监控状态 |
 | `<服务器名>` | 查询指定服务器详情（支持模糊匹配） |
-| `详情 <服务器名>` | 查看服务器完整信息（CPU、内存、磁盘、负载、网络等） |
-| `监控 <服务器名> [指标] [周期]` | 查看服务器监控历史（指标: cpu/memory/disk 等，周期: 1d/7d/30d） |
-| `服务` / `service` | 查看服务监控状态（HTTP/TCP/Ping 等） |
-| `安装 linux` | 获取 Linux Agent 一键安装命令 |
-| `安装 windows` | 获取 Windows Agent 安装命令 |
-| `安装 docker` | 获取 Docker Agent 安装命令 |
-| `重启 <服务器名>` | 重启服务器（需确认，自动识别 Linux/Windows） |
-| `NAT` / `NAT 列表` | 查看 NAT 穿透配置列表 |
-| `NAT 添加` | 分步添加 NAT 穿透配置 |
-| `NAT 添加 名称 域名 内网地址 服务器名` | 一步完成添加 |
-| `NAT 启用 <ID>` | 启用 NAT 配置 |
-| `NAT 禁用 <ID>` | 禁用 NAT 配置 |
-| `NAT 删除 <ID>` | 删除 NAT 配置（需确认） |
-| `NAT 修改 <ID> <内网地址:端口> [服务器名]` | 修改 NAT 配置（地址和/或服务器） |
-| `NAT 修改 <ID> - <服务器名>` | 只修改 NAT 的服务器 |
-| `DDNS` / `DDNS 列表` | 查看 DDNS 配置列表 |
-| `DDNS 提供商` | 查看支持的 DDNS 提供商 |
-| `DDNS 添加` | 分步添加 DDNS 配置 |
-| `DDNS 删除 <ID>` | 删除 DDNS 配置（需确认） |
-| `DDNS 启用 <ID>` | 启用 DDNS 的 IPv4 |
-| `DDNS 禁用 <ID>` | 禁用 DDNS 的 IPv4 |
-| `通知` / `notification` | 查看通知渠道列表 |
-| `通知 添加 <名称> <URL>` | 快速添加通知渠道 |
-| `通知 添加` | 分步添加通知渠道 |
-| `通知 删除 <ID>` | 删除通知渠道（需确认） |
-| `标签 <服务器名> <标签内容>` | 更新服务器私有备注/标签 |
-| `确认` / `取消` | 确认或取消待执行的操作 |
+| `详情 <服务器名>` | 查看服务器完整信息 |
+| `重启 <服务器名>` | 重启服务器（需确认） |
+| `安装 linux/windows/docker` | 获取 Agent 安装命令 |
+| `NAT` / `DDNS` / `通知` | 管理功能 |
+
+**Inline Keyboard 交互**：
+- `/list` 命令会显示服务器列表键盘，点击可查看详情
+- 底部操作按钮：状态概览、离线列表、刷新、帮助
+- 确认/取消操作使用 Inline Keyboard 按钮
 
 ### 健康检查
 
@@ -252,6 +280,9 @@ curl -X POST https://your-domain.com/wecomchan \
 | `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
 | `REDIS_PASSWORD` | Redis 密码 | - |
 | `MAIL_FOOTER_URL` | 邮件底部链接地址 | - |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram Webhook 验证密钥 | - |
+| `TELEGRAM_ALLOWED_USERS` | 允许访问的 Telegram 用户 ID（逗号分隔） | 空表示允许所有 |
 
 ## 项目结构
 
@@ -266,6 +297,8 @@ curl -X POST https://your-domain.com/wecomchan \
 ├── nezha_api.go        # 哪吒监控 API 封装（服务器/NAT/DDNS/通知）
 ├── handlers.go         # HTTP 处理器（/wecomchan, /webhook, /mail）
 ├── callback.go         # 企业微信回调处理（明文/加密模式）
+├── telegram.go         # Telegram Bot 处理（Webhook/Inline Keyboard）
+├── .env.example        # 环境变量示例
 ├── docker-compose.yml  # Docker Compose 配置
 ├── Dockerfile
 ├── docs/               # 文档
