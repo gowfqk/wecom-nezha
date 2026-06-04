@@ -15,9 +15,12 @@ import (
 var TelegramBotToken = GetEnvDefault("TELEGRAM_BOT_TOKEN", "")
 var TelegramWebhookSecret = GetEnvDefault("TELEGRAM_WEBHOOK_SECRET", "")
 var TelegramAllowedUsers = GetEnvDefault("TELEGRAM_ALLOWED_USERS", "") // 逗号分隔的用户ID列表，空表示允许所有
+var TelegramAPIBase = GetEnvDefault("TELEGRAM_API_BASE", "https://api.telegram.org")
 
 // Telegram API 基础 URL
-var TelegramAPIBase = "https://api.telegram.org/bot" + TelegramBotToken
+func getTelegramAPIBase() string {
+	return strings.TrimRight(TelegramAPIBase, "/") + "/bot" + TelegramBotToken
+}
 
 // TelegramUpdate Telegram 更新结构
 type TelegramUpdate struct {
@@ -341,7 +344,7 @@ func buildServerKeyboard() *TelegramInlineKeyboard {
 
 // sendTelegramMessage 发送 Telegram 消息
 func sendTelegramMessage(chatID int, text string, keyboard *TelegramInlineKeyboard) {
-	url := fmt.Sprintf("%s/sendMessage", TelegramAPIBase)
+	url := fmt.Sprintf("%s/sendMessage", getTelegramAPIBase())
 
 	payload := map[string]interface{}{
 		"chat_id":    chatID,
@@ -374,7 +377,7 @@ func sendTelegramMessage(chatID int, text string, keyboard *TelegramInlineKeyboa
 
 // editTelegramMessage 编辑 Telegram 消息
 func editTelegramMessage(chatID int, messageID int, text string, keyboard *TelegramInlineKeyboard) {
-	url := fmt.Sprintf("%s/editMessageText", TelegramAPIBase)
+	url := fmt.Sprintf("%s/editMessageText", getTelegramAPIBase())
 
 	payload := map[string]interface{}{
 		"chat_id":    chatID,
@@ -408,7 +411,7 @@ func editTelegramMessage(chatID int, messageID int, text string, keyboard *Teleg
 
 // answerTelegramCallback 回应 Telegram 回调查询
 func answerTelegramCallback(callbackID string, text string) {
-	url := fmt.Sprintf("%s/answerCallbackQuery", TelegramAPIBase)
+	url := fmt.Sprintf("%s/answerCallbackQuery", getTelegramAPIBase())
 
 	payload := map[string]interface{}{
 		"callback_query_id": callbackID,
@@ -442,7 +445,7 @@ func SetTelegramWebhook(webhookURL string) error {
 		return fmt.Errorf("TELEGRAM_BOT_TOKEN 未设置")
 	}
 
-	url := fmt.Sprintf("%s/setWebhook", TelegramAPIBase)
+	url := fmt.Sprintf("%s/setWebhook", getTelegramAPIBase())
 
 	payload := map[string]interface{}{
 		"url": webhookURL,
