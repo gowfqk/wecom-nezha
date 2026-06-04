@@ -487,3 +487,64 @@ func SetTelegramWebhook(webhookURL string) error {
 	logger.Printf("Telegram Webhook 设置成功: %s", webhookURL)
 	return nil
 }
+
+// TelegramBotCommand Telegram Bot 命令结构
+type TelegramBotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetTelegramBotCommands 设置 Telegram Bot 命令菜单
+func SetTelegramBotCommands() error {
+	if TelegramBotToken == "" {
+		return fmt.Errorf("TELEGRAM_BOT_TOKEN 未设置")
+	}
+
+	url := fmt.Sprintf("%s/setMyCommands", getTelegramAPIBase())
+
+	commands := []TelegramBotCommand{
+		{Command: "status", Description: "📊 查看服务器状态概览"},
+		{Command: "list", Description: "📋 列出所有服务器"},
+		{Command: "offline", Description: "🔴 查看离线服务器"},
+		{Command: "service", Description: "🔍 查看服务监控状态"},
+		{Command: "help", Description: "❓ 显示帮助信息"},
+	}
+
+	payload := map[string]interface{}{
+		"commands": commands,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("序列化命令配置失败: %v", err)
+	}
+
+	resp, err := httpClient.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	if err != nil {
+		return fmt.Errorf("设置命令菜单失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Telegram API 返回错误 (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		OK          bool   `json:"ok"`
+		Result      bool   `json:"result"`
+		Description string `json:"description"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	if !result.OK {
+		return fmt.Errorf("Telegram API 返回失败: %s", result.Description)
+	}
+
+	logger.Println("Telegram Bot 命令菜单设置成功")
+	return nil
+}
