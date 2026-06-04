@@ -217,7 +217,24 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		delete(pendingEdits.edits, msg.From.ID)
 		pendingEdits.Unlock()
 
-		// 执行更新
+		// NAT 地址修改
+		if edit.Field == "nat_host" {
+			natID := edit.ServerID
+			host := strings.TrimSpace(content)
+			if !strings.Contains(host, ":") {
+				sendTelegramMessage(msg.Chat.ID, "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080", nil)
+				return
+			}
+			err := UpdateNat(natID, host, 0)
+			if err != nil {
+				sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("❌ 修改失败: %v", err), nil)
+				return
+			}
+			sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("✅ NAT [%d] 已更新\n新地址: %s", natID, host), buildNatKeyboard())
+			return
+		}
+
+		// 服务器字段更新
 		fieldNames := map[string]string{
 			"name":        "名称",
 			"note":        "标签",
@@ -253,15 +270,15 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		response = getServiceStatus()
 	case content == "/nat", content == "nat", content == "NAT":
 		response = getNatList()
+		keyboard = buildNatKeyboard()
 	case content == "/ddns", content == "ddns", content == "DDNS":
 		response = getDDNSList()
 	case content == "/notification", content == "通知", content == "notification":
 		response = getNotificationList()
 	case content == "/install", content == "安装", content == "agent":
 		response = `安装命令用法：
-- 安装 linux：Linux 一键安装
-- 安装 windows：Windows 安装命令
-- 安装 docker：Docker 安装命令`
+选择平台获取安装命令：`
+		keyboard = buildInstallKeyboard()
 	default:
 		// 单词输入：先尝试作为服务器名查询（带编辑键盘）
 		if !strings.Contains(content, " ") {
@@ -358,6 +375,104 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		response = handleConfirmAction("确认", userID)
 	case data == "cancel":
 		response = handleConfirmAction("取消", userID)
+	case strings.HasPrefix(data, "install:"):
+		// 安装命令回调
+		platform := strings.TrimPrefix(data, "install:")
+		response = getAgentInstallCmd(platform)
+	case strings.HasPrefix(data, "nat:"):
+		// NAT 操作回调
+		natAction := strings.TrimPrefix(data, "nat:")
+		switch {
+		case natAction == "list":
+			response = getNatList()
+			keyboard = buildNatKeyboard()
+		case natAction == "add":
+			// 进入 NAT 添加流程
+			pendingMutex.Lock()
+			pendingActions[userID] = pendingAction{
+				Type: "nat_add",
+				Data: map[string]interface{}{},
+			}
+			pendingMutex.Unlock()
+			response = "开始添加 NAT 穿透配置：\n\n第 1 步：请输入配置名称\n（如：SSH穿透、Web服务）"
+		case strings.HasPrefix(natAction, "toggle:"):
+			idStr := strings.TrimPrefix(natAction, "toggle:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			// 查询当前状态来决定切换
+			nats, nerr := GetNatList()
+			if nerr != nil {
+				response = fmt.Sprintf("查询失败: %v", nerr)
+				break
+			}
+			for _, n := range nats {
+				if uint(n["id"].(float64)) == uint(id) {
+					enabled := n["enabled"].(bool)
+					terr := ToggleNat(uint(id), !enabled)
+					if terr != nil {
+						response = fmt.Sprintf("操作失败: %v", terr)
+					} else {
+						action := "启用"
+						if enabled {
+							action = "禁用"
+						}
+						response = fmt.Sprintf("✅ NAT [%d] 已%s", id, action)
+					}
+					keyboard = buildNatKeyboard()
+					break
+				}
+			}
+		case strings.HasPrefix(natAction, "delete:"):
+			idStr := strings.TrimPrefix(natAction, "delete:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			// 查找名称并确认
+			nats, nerr := GetNatList()
+			if nerr != nil {
+				response = fmt.Sprintf("查询失败: %v", nerr)
+				break
+			}
+			for _, n := range nats {
+				if uint(n["id"].(float64)) == uint(id) {
+					natName := n["name"].(string)
+					pendingMutex.Lock()
+					pendingActions[userID] = pendingAction{
+						Type: "nat_delete",
+						Data: map[string]interface{}{
+							"id":   float64(id),
+							"name": natName,
+						},
+					}
+					pendingMutex.Unlock()
+					response = fmt.Sprintf("确定要删除 NAT 配置 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, natName)
+					break
+				}
+			}
+		case strings.HasPrefix(natAction, "edit:"):
+			idStr := strings.TrimPrefix(natAction, "edit:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			// 保存待编辑 NAT 状态
+			pendingEdits.Lock()
+			pendingEdits.edits[callback.From.ID] = pendingEdit{
+				Field:      "nat_host",
+				ServerName: fmt.Sprintf("%d", id),
+				ServerID:   uint(id),
+			}
+			pendingEdits.Unlock()
+			response = fmt.Sprintf("📝 请输入 NAT [%d] 的新内网地址:端口\n如: 192.168.1.100:8080", id)
+		default:
+			response = "未知 NAT 操作"
+		}
 	default:
 		// 尝试作为服务器名查询
 		var exactName string
@@ -484,6 +599,52 @@ func buildEditKeyboard(serverName string) *TelegramInlineKeyboard {
 		},
 		{
 			{Text: "🔙 返回列表", CallbackData: "cmd:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildInstallKeyboard 构建安装命令键盘
+func buildInstallKeyboard() *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "🐧 Linux", CallbackData: "install:linux"},
+			{Text: "🪟 Windows", CallbackData: "install:windows"},
+			{Text: "🐳 Docker", CallbackData: "install:docker"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildNatKeyboard 构建 NAT 操作键盘
+func buildNatKeyboard() *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "➕ 添加穿透", CallbackData: "nat:add"},
+		},
+		{
+			{Text: "🔄 刷新列表", CallbackData: "nat:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildNatItemKeyboard 构建单个 NAT 项的操作键盘
+func buildNatItemKeyboard(natID uint, enabled bool) *TelegramInlineKeyboard {
+	toggleText := "🔴 禁用"
+	if !enabled {
+		toggleText = "🟢 启用"
+	}
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: toggleText, CallbackData: fmt.Sprintf("nat:toggle:%d", natID)},
+			{Text: "🗑️ 删除", CallbackData: fmt.Sprintf("nat:delete:%d", natID)},
+		},
+		{
+			{Text: "✏️ 修改地址", CallbackData: fmt.Sprintf("nat:edit:%d", natID)},
+		},
+		{
+			{Text: "🔙 返回列表", CallbackData: "nat:list"},
 		},
 	}
 	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
