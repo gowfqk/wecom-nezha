@@ -347,9 +347,8 @@ func sendTelegramMessage(chatID int, text string, keyboard *TelegramInlineKeyboa
 	url := fmt.Sprintf("%s/sendMessage", getTelegramAPIBase())
 
 	payload := map[string]interface{}{
-		"chat_id":    chatID,
-		"text":       text,
-		"parse_mode": "Markdown",
+		"chat_id": chatID,
+		"text":    text,
 	}
 
 	if keyboard != nil {
@@ -383,7 +382,6 @@ func editTelegramMessage(chatID int, messageID int, text string, keyboard *Teleg
 		"chat_id":    chatID,
 		"message_id": messageID,
 		"text":       text,
-		"parse_mode": "Markdown",
 	}
 
 	if keyboard != nil {
