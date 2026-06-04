@@ -465,6 +465,55 @@ func GetServerByID(serverID uint) (map[string]interface{}, error) {
 	return result.Data[0], nil
 }
 
+// UpdateServerField 通用服务器字段更新
+// field: "name"(显示名称), "note"(私有标签), "public_note"(备注)
+func UpdateServerField(serverID uint, field, value string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	// 先读取当前服务器信息
+	server, err := GetServerByID(serverID)
+	if err != nil {
+		return err
+	}
+
+	// 修改目标字段
+	server[field] = value
+
+	// 清理不需要提交的字段
+	delete(server, "id")
+	delete(server, "created_at")
+	delete(server, "updated_at")
+	delete(server, "last_active")
+	delete(server, "state")
+	delete(server, "host")
+	delete(server, "geoip")
+
+	url := fmt.Sprintf("%s/api/v1/server/%d", strings.TrimRight(NezhaUrl, "/"), serverID)
+	jsonData, _ := json.Marshal(server)
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("更新失败: %s", result.Error)
+	}
+
+	return nil
+}
+
 // UpdateServerNote 更新服务器备注（保留原有字段）
 func UpdateServerNote(serverID uint, publicNote string) error {
 	if err := NezhaLogin(); err != nil {

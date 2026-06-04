@@ -79,6 +79,18 @@ var processedTelegramMsgIDs = struct {
 	ids map[int]time.Time
 }{ids: make(map[int]time.Time)}
 
+// pendingEdit 待编辑操作（用户点了编辑按钮后等待输入新值）
+type pendingEdit struct {
+	Field      string // "name", "note", "public_note"
+	ServerName string
+	ServerID   uint
+}
+
+var pendingEdits = struct {
+	sync.RWMutex
+	edits map[int]pendingEdit // userID -> pendingEdit
+}{edits: make(map[int]pendingEdit)}
+
 func init() {
 	// 启动后台清理 goroutine
 	go func() {
@@ -195,6 +207,32 @@ func handleTelegramMessage(msg *TelegramMessage) {
 
 	logger.Printf("收到 Telegram 消息: 用户=%d (%s), 内容=%s", msg.From.ID, msg.From.Username, content)
 
+	// 检查是否有待编辑操作（用户点了编辑按钮后发送新值）
+	pendingEdits.RLock()
+	edit, hasEdit := pendingEdits.edits[msg.From.ID]
+	pendingEdits.RUnlock()
+	if hasEdit {
+		// 清除待编辑状态
+		pendingEdits.Lock()
+		delete(pendingEdits.edits, msg.From.ID)
+		pendingEdits.Unlock()
+
+		// 执行更新
+		fieldNames := map[string]string{
+			"name":        "名称",
+			"note":        "标签",
+			"public_note": "备注",
+		}
+		err := UpdateServerField(edit.ServerID, edit.Field, content)
+		if err != nil {
+			sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("❌ 更新失败: %v", err), nil)
+			return
+		}
+		sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("✅ 已更新 %s 的%s\n%s: %s",
+			edit.ServerName, fieldNames[edit.Field], fieldNames[edit.Field], content), nil)
+		return
+	}
+
 	// 处理命令
 	var response string
 	var keyboard *TelegramInlineKeyboard
@@ -225,7 +263,16 @@ func handleTelegramMessage(msg *TelegramMessage) {
 - 安装 windows：Windows 安装命令
 - 安装 docker：Docker 安装命令`
 	default:
-		// 复用现有的消息处理逻辑
+		// 单词输入：先尝试作为服务器名查询（带编辑键盘）
+		if !strings.Contains(content, " ") {
+			detail, exactName := getServerDetailWithExactName(content)
+			if exactName != "" {
+				response = detail
+				keyboard = buildEditKeyboard(exactName)
+				break
+			}
+		}
+		// 不是服务器名或包含空格，走通用消息处理
 		response = processUserMessage(content, userID)
 	}
 
@@ -267,7 +314,45 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 	case strings.HasPrefix(data, "server:"):
 		// 查询服务器详情
 		serverName := strings.TrimPrefix(data, "server:")
-		response = getServerDetail(serverName)
+		var exactName string
+		response, exactName = getServerDetailWithExactName(serverName)
+		if exactName != "" {
+			keyboard = buildEditKeyboard(exactName)
+		}
+	case strings.HasPrefix(data, "edit:"):
+		// 编辑字段: edit:field:serverName
+		parts := strings.SplitN(strings.TrimPrefix(data, "edit:"), ":", 2)
+		if len(parts) == 2 {
+			field := parts[0]
+			serverName := parts[1]
+			fieldNames := map[string]string{
+				"name":        "名称",
+				"note":        "标签",
+				"public_note": "备注",
+			}
+			fieldName, ok := fieldNames[field]
+			if !ok {
+				response = "未知字段"
+				break
+			}
+			// 查找服务器ID
+			server, err := GetNezhaServerByName(serverName)
+			if err != nil {
+				response = fmt.Sprintf("未找到服务器: %s", serverName)
+				break
+			}
+			// 保存待编辑状态
+			pendingEdits.Lock()
+			pendingEdits.edits[callback.From.ID] = pendingEdit{
+				Field:      field,
+				ServerName: server.Name,
+				ServerID:   server.ID,
+			}
+			pendingEdits.Unlock()
+			response = fmt.Sprintf("📝 请输入 %s 的新%s：", server.Name, fieldName)
+		} else {
+			response = "无效的编辑操作"
+		}
 	case strings.HasPrefix(data, "confirm:"):
 		// 处理确认操作
 		response = handleConfirmAction("确认", userID)
@@ -275,9 +360,12 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		response = handleConfirmAction("取消", userID)
 	default:
 		// 尝试作为服务器名查询
-		response = getServerDetail(data)
+		var exactName string
+		response, exactName = getServerDetailWithExactName(data)
 		if strings.Contains(response, "未找到") {
 			response = "未知操作: " + data
+		} else if exactName != "" {
+			keyboard = buildEditKeyboard(exactName)
 		}
 	}
 
@@ -313,6 +401,7 @@ func getTelegramHelpMessage() string {
 安装 windows - Windows 安装命令
 安装 docker - Docker 安装命令
 标签 <服务器名> <内容> - 更新标签
+修改 <服务器名> <字段> <值> - 修改服务器信息
 
 ━━━━━━ 🌐 NAT 穿透 ━━━━━━
 NAT - 查看穿透列表
@@ -380,6 +469,23 @@ func buildServerKeyboard() *TelegramInlineKeyboard {
 		{Text: "❓ 帮助", CallbackData: "cmd:help"},
 	})
 
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildEditKeyboard 构建编辑操作键盘
+func buildEditKeyboard(serverName string) *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "✏️ 修改名称", CallbackData: fmt.Sprintf("edit:name:%s", serverName)},
+			{Text: "🏷️ 修改标签", CallbackData: fmt.Sprintf("edit:note:%s", serverName)},
+		},
+		{
+			{Text: "📝 修改备注", CallbackData: fmt.Sprintf("edit:public_note:%s", serverName)},
+		},
+		{
+			{Text: "🔙 返回列表", CallbackData: "cmd:list"},
+		},
+	}
 	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
 }
 

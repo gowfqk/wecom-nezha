@@ -360,6 +360,7 @@ func processUserMessage(content, userID string) string {
 - 通知：查看通知渠道列表
 - 通知 添加 名称 URL：快速添加通知渠道
 - 通知 删除 ID：删除通知渠道（需确认）
+- 修改 服务器名 字段 新值：修改服务器信息（名称/标签/备注）
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
 - 确认/取消：通用确认机制
 
@@ -427,9 +428,14 @@ func processUserMessage(content, userID string) string {
 		}
 
 		// 标签/备注命令
-		if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签\t") ||
-			strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注\t") {
+		if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签	") ||
+			strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注	") {
 			return updateServerNoteCmd(content)
+		}
+
+		// 修改命令: 修改 服务器名 字段 新值
+		if strings.HasPrefix(lower, "修改 ") || strings.HasPrefix(lower, "修改	") {
+			return updateServerFieldCmd(content)
 		}
 
 		// 检查是否有待确认的 NAT 添加步骤（含 step 字段表示分步进行中）
@@ -619,6 +625,21 @@ func getServerDetail(name string) string {
 		return formatMatchedList(result.Matched, "回复服务器名称查看详情")
 	}
 	return fmt.Sprintf("未找到服务器: %s\n发送 帮助 查看命令", name)
+}
+
+// getServerDetailWithExactName 获取服务器详情并返回精确名称（用于构建编辑键盘）
+func getServerDetailWithExactName(name string) (string, string) {
+	result, err := FindServer(name, true)
+	if err != nil {
+		return fmt.Sprintf("查询失败: %v", err), ""
+	}
+	if result.Server != nil {
+		return formatServerDetail(result.Server), result.Server.Name
+	}
+	if len(result.Matched) > 0 {
+		return formatMatchedList(result.Matched, "回复服务器名称查看详情"), ""
+	}
+	return fmt.Sprintf("未找到服务器: %s\n发送 帮助 查看命令", name), ""
 }
 
 // formatServerDetail 格式化服务器详情（快速查看）
@@ -1945,4 +1966,97 @@ func startNotificationDelete(userID, content string) string {
 	pendingMutex.Unlock()
 
 	return fmt.Sprintf("确定要删除通知渠道 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, notifyName)
+}
+
+// fieldAlias 字段别名映射
+var fieldAlias = map[string]string{
+	"name":        "name",
+	"名称":        "name",
+	"显示名":      "name",
+	"note":        "note",
+	"标签":        "note",
+	"私有备注":    "note",
+	"public_note": "public_note",
+	"备注":        "public_note",
+	"公开备注":    "public_note",
+}
+
+// fieldDisplayName 字段显示名
+var fieldDisplayName = map[string]string{
+	"name":        "名称",
+	"note":        "标签",
+	"public_note": "备注",
+}
+
+// updateServerFieldCmd 通用服务器字段修改
+// 格式: 修改 服务器名 字段 新值
+// 示例: 修改 web01 名称 web-server-01
+//       修改 web01 标签 生产环境
+//       修改 web01 备注 主站服务器
+func updateServerFieldCmd(content string) string {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(content, "修改"))
+	trimmed = strings.TrimSpace(trimmed)
+
+	// 解析: 服务器名 字段 新值
+	fields := strings.SplitN(trimmed, " ", 3)
+	if len(fields) < 3 {
+		return `用法: 修改 服务器名 字段 新值
+
+支持的字段:
+- 名称：服务器显示名称
+- 标签：私有标签（仅管理员可见）
+- 备注：公开备注
+
+示例:
+修改 web01 名称 web-server-01
+修改 web01 标签 生产环境
+修改 web01 备注 主站服务器`
+	}
+
+	serverName := strings.TrimSpace(fields[0])
+	fieldInput := strings.TrimSpace(fields[1])
+	newValue := strings.TrimSpace(fields[2])
+
+	// 解析字段名
+	apiField, ok := fieldAlias[fieldInput]
+	if !ok {
+		return fmt.Sprintf("不支持的字段: %s\n支持: 名称 / 标签 / 备注", fieldInput)
+	}
+
+	// 模糊匹配服务器
+	server, err := GetNezhaServerByName(serverName)
+	if err != nil {
+		servers, err2 := GetNezhaServerList()
+		if err2 != nil {
+			return fmt.Sprintf("查询服务器失败: %v", err2)
+		}
+		var matched []NezhaServer
+		lowerName := strings.ToLower(serverName)
+		for _, s := range servers {
+			if strings.Contains(strings.ToLower(s.Name), lowerName) ||
+				strings.Contains(strings.ToLower(s.Note), lowerName) ||
+				strings.Contains(strings.ToLower(s.Tag), lowerName) {
+				matched = append(matched, s)
+			}
+		}
+		if len(matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", serverName)
+		}
+		if len(matched) > 1 {
+			result := "找到多个匹配的服务器：\n"
+			for _, m := range matched {
+				result += fmt.Sprintf("- %s %s\n", m.Name, summarizeTag(m.Tag))
+			}
+			return result + "\n请用更精确的名称"
+		}
+		server = &matched[0]
+	}
+
+	err = UpdateServerField(server.ID, apiField, newValue)
+	if err != nil {
+		return fmt.Sprintf("修改失败: %v", err)
+	}
+
+	return fmt.Sprintf("✅ 已更新 %s 的%s\n%s: %s",
+		server.Name, fieldDisplayName[apiField], fieldDisplayName[apiField], newValue)
 }
