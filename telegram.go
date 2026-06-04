@@ -213,6 +213,17 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		response = getOfflineServersList()
 	case content == "/service", content == "服务", content == "service":
 		response = getServiceStatus()
+	case content == "/nat", content == "nat", content == "NAT":
+		response = getNatList()
+	case content == "/ddns", content == "ddns", content == "DDNS":
+		response = getDDNSList()
+	case content == "/notification", content == "通知", content == "notification":
+		response = getNotificationList()
+	case content == "/install", content == "安装", content == "agent":
+		response = `安装命令用法：
+- 安装 linux：Linux 一键安装
+- 安装 windows：Windows 安装命令
+- 安装 docker：Docker 安装命令`
 	default:
 		// 复用现有的消息处理逻辑
 		response = processUserMessage(content, userID)
@@ -285,24 +296,54 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 
 // getTelegramHelpMessage 获取 Telegram 帮助消息
 func getTelegramHelpMessage() string {
-	return `🤖 *Nezha 监控 Bot*
+	return `🤖 Nezha 监控 Bot
 
-可用命令:
-/status - 查看服务器状态概览
-/list - 列出所有服务器
-/offline - 查看离线服务器
-/service - 查看服务监控状态
-/help - 显示此帮助
+━━━━━━ 📊 服务器监控 ━━━━━━
+/status - 服务器状态概览
+/list - 所有服务器列表
+/offline - 离线服务器
+/service - 服务监控状态
+<服务器名> - 快速查看详情
+详情 <服务器名> - 完整信息
+监控 <服务器名> [指标] [周期] - 监控历史
 
-你也可以直接输入:
-• 服务器名称 - 快速查看状态
-• 详情 服务器名 - 查看完整信息
-• 重启 服务器名 - 重启服务器
-• 安装 linux/windows/docker - 获取安装命令
-• NAT / DDNS / 通知 - 管理功能
+━━━━━━ 🔧 服务器管理 ━━━━━━
+重启 <服务器名> - 重启服务器
+安装 linux - Linux 安装命令
+安装 windows - Windows 安装命令
+安装 docker - Docker 安装命令
+标签 <服务器名> <内容> - 更新标签
 
-监控指标: cpu/memory/disk/net_in_speed/net_out_speed/load1
-监控周期: 1d(默认)/7d/30d`
+━━━━━━ 🌐 NAT 穿透 ━━━━━━
+NAT - 查看穿透列表
+NAT 添加 - 添加穿透配置
+NAT 启用 <ID> - 启用穿透
+NAT 禁用 <ID> - 禁用穿透
+NAT 删除 <ID> - 删除穿透
+NAT 修改 <ID> <地址:端口> [服务器]
+
+━━━━━━ 🔄 DDNS 管理 ━━━━━━
+DDNS - 查看 DDNS 列表
+DDNS 添加 - 添加 DDNS 配置
+DDNS 删除 <ID> - 删除 DDNS
+DDNS 启用 <ID> - 启用 IPv4
+DDNS 禁用 <ID> - 禁用 IPv4
+DDNS 提供商 - 查看提供商
+
+━━━━━━ 📢 通知渠道 ━━━━━━
+通知 - 查看通知渠道
+通知 添加 <名称> <URL> - 快速添加
+通知 添加 - 分步添加
+通知 删除 <ID> - 删除渠道
+
+━━━━━━ 📋 监控参数 ━━━━━━
+指标: cpu / memory / disk
+      net_in_speed / net_out_speed / load1
+周期: 1d (默认) / 7d / 30d
+
+━━━━━━ ⚙️ 其他命令 ━━━━━━
+确认 / 取消 - 确认操作
+帮助 / help - 显示此帮助`
 }
 
 // buildServerKeyboard 构建服务器选择键盘
@@ -503,10 +544,14 @@ func SetTelegramBotCommands() error {
 	url := fmt.Sprintf("%s/setMyCommands", getTelegramAPIBase())
 
 	commands := []TelegramBotCommand{
-		{Command: "status", Description: "📊 查看服务器状态概览"},
-		{Command: "list", Description: "📋 列出所有服务器"},
-		{Command: "offline", Description: "🔴 查看离线服务器"},
-		{Command: "service", Description: "🔍 查看服务监控状态"},
+		{Command: "status", Description: "📊 服务器状态概览"},
+		{Command: "list", Description: "📋 所有服务器列表"},
+		{Command: "offline", Description: "🔴 离线服务器"},
+		{Command: "service", Description: "🔍 服务监控状态"},
+		{Command: "nat", Description: "🌐 NAT 穿透列表"},
+		{Command: "ddns", Description: "🔄 DDNS 配置列表"},
+		{Command: "notification", Description: "📢 通知渠道列表"},
+		{Command: "install", Description: "📦 Agent 安装命令"},
 		{Command: "help", Description: "❓ 显示帮助信息"},
 	}
 
