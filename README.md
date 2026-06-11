@@ -30,6 +30,16 @@
 - ✅ **健康检查**：`/healthz`（存活）、`/readyz`（就绪）
 - ✅ **Docker 部署**：支持多架构构建（amd64、arm64）
 
+## 部署步骤
+
+1. **准备哪吒监控**：确保哪吒监控面板已部署，获取面板地址和管理员账号
+2. **创建企业微信应用**：在企业微信管理后台创建自建应用，获取 CorpID、Secret、AgentID
+3. **创建 Telegram Bot**（可选）：向 @BotFather 创建 Bot，获取 Token
+4. **配置环境变量**：复制 `.env.example` 为 `.env`，填写各项配置
+5. **部署服务**：使用 Docker Compose、Docker 或编译方式部署
+6. **配置企业微信回调**：在企业微信后台设置回调 URL 为 `https://your-domain.com/callback`
+7. **设置 Telegram Webhook**（可选）：将 `https://your-domain.com/telegram/webhook` 注册为 Webhook
+
 ## 快速开始
 
 ### 1. 创建 Telegram Bot（可选）
@@ -43,6 +53,8 @@
 
 ### 2. Docker Compose（推荐）
 
+> 💡 可先复制 `.env.example` 为 `.env` 填写配置，再执行 `docker compose up -d`。
+
 ```yaml
 services:
   wecom-nezha:
@@ -51,21 +63,30 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # 认证密钥
       - SENDKEY=${SENDKEY:-set_a_sendkey}
+      # 企业微信配置
       - WECOM_CID=${WECOM_CID}
-      - WECOM_SECRET=***      - WECOM_AID=${WECOM_AID}
+      - WECOM_SECRET=${WECOM_SECRET}
+      - WECOM_AID=${WECOM_AID}
       - WECOM_TOUID=${WECOM_TOUID:-@all}
-      - WECOM_TOKEN=***      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY}
+      # 企业微信回调（可选）
+      - WECOM_TOKEN=${WECOM_TOKEN:-}
+      - WECOM_ENCODING_AES_KEY=${WECOM_ENCODING_AES_KEY:-}
+      # 哪吒监控配置
       - NEZHA_URL=${NEZHA_URL}
       - NEZHA_USERNAME=${NEZHA_USERNAME}
-      - NEZHA_PASSWORD=${NEZH...D}
+      - NEZHA_PASSWORD=${NEZHA_PASSWORD}
+      # 缓存配置
       - CACHE_TYPE=${CACHE_TYPE:-memory}
       - REDIS_STAT=${REDIS_STAT:-OFF}
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
-      - REDIS_PASSWORD=${REDI...D}
-      - TELEGRAM_BOT_TOKEN=${TELE...N}
-      - TELEGRAM_WEBHOOK_SECRET=${TELE...T}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # Telegram Bot 配置（可选）
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      - TELEGRAM_API_BASE=${TELEGRAM_API_BASE:-https://api.telegram.org}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -83,17 +104,18 @@ services:
 docker run -d -p 8080:8080 \
   -e SENDKEY=your_sendkey \
   -e WECOM_CID=your_corpid \
-  -e WECOM_SECRET=*** \
+  -e WECOM_SECRET=your_secret \
   -e WECOM_AID=your_agentid \
-  -e WECOM_TOKEN=your_c...oken \
+  -e WECOM_TOKEN=your_callback_token \
   -e WECOM_ENCODING_AES_KEY=your_aes_key \
   -e NEZHA_URL=https://nezha.example.com \
   -e NEZHA_USERNAME=admin \
-  -e NEZHA_PASSWORD=*** \
+  -e NEZHA_PASSWORD=your_password \
   -e CACHE_TYPE=memory \
-  -e TELEGRAM_BOT_TOKEN=your_t...oken \
-  -e TELEGRAM_WEBHOOK_SECRET=your_w...cret \
+  -e TELEGRAM_BOT_TOKEN=your_telegram_bot_token \
+  -e TELEGRAM_WEBHOOK_SECRET=your_webhook_secret \
   -e TELEGRAM_ALLOWED_USERS=123456789,987654321 \
+  -e TELEGRAM_API_BASE=https://api.telegram.org \
   gowfqk/wecom-nezha:latest
 ```
 
@@ -283,6 +305,7 @@ curl -X POST https://your-domain.com/wecomchan \
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
 | `TELEGRAM_WEBHOOK_SECRET` | Telegram Webhook 验证密钥 | - |
 | `TELEGRAM_ALLOWED_USERS` | 允许访问的 Telegram 用户 ID（逗号分隔） | 空表示允许所有 |
+| `TELEGRAM_API_BASE` | Telegram API 地址（使用反向代理时设置） | `https://api.telegram.org` |
 
 ## 项目结构
 
