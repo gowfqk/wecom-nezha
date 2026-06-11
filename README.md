@@ -285,27 +285,31 @@ curl -X POST https://your-domain.com/wecomchan \
 
 ## 环境变量配置
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `SENDKEY` | 验证密钥 | `set_a_sendkey` |
-| `WECOM_CID` | 企业微信公司 ID | - |
-| `WECOM_SECRET` | 企业微信应用 Secret | - |
-| `WECOM_AID` | 企业微信应用 ID | - |
-| `WECOM_TOUID` | 默认接收人 | `@all` |
-| `WECOM_TOKEN` | 企业微信回调 Token | - |
-| `WECOM_ENCODING_AES_KEY` | 企业微信回调 EncodingAESKey（加密模式） | - |
-| `NEZHA_URL` | 哪吒监控面板地址 | - |
-| `NEZHA_USERNAME` | 哪吒用户名 | - |
-| `NEZHA_PASSWORD` | 哪吒密码 | - |
-| `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis`（推荐 `memory`） | `none` |
-| `REDIS_STAT` | Redis 状态：`ON`/`OFF` | `OFF` |
-| `REDIS_ADDR` | Redis 地址 | `localhost:6379` |
-| `REDIS_PASSWORD` | Redis 密码 | - |
-| `MAIL_FOOTER_URL` | 邮件底部链接地址 | - |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
-| `TELEGRAM_WEBHOOK_SECRET` | Telegram Webhook 验证密钥 | - |
-| `TELEGRAM_ALLOWED_USERS` | 允许访问的 Telegram 用户 ID（逗号分隔） | 空表示允许所有 |
-| `TELEGRAM_API_BASE` | Telegram API 地址（使用反向代理时设置） | `https://api.telegram.org` |
+> **说明**：企业微信相关变量（`WECOM_*`）仅在使用企业微信推送/邮件/回调功能时需要配置，不使用时可留空，不影响 Telegram Bot 和其他功能的正常运行。同理，Telegram 相关变量不配置也不影响企业微信功能。
+
+| 变量名 | 说明 | 必填 | 默认值 |
+|--------|------|------|--------|
+| `SENDKEY` | 验证密钥 | ✅ | `set_a_sendkey` |
+| `NEZHA_URL` | 哪吒监控面板地址 | ✅ | - |
+| `NEZHA_USERNAME` | 哪吒用户名 | ✅ | - |
+| `NEZHA_PASSWORD` | 哪吒密码 | ✅ | - |
+| `WECOM_CID` | 企业微信公司 ID | 企微 | - |
+| `WECOM_SECRET` | 企业微信应用 Secret | 企微 | - |
+| `WECOM_AID` | 企业微信应用 ID | 企微 | - |
+| `WECOM_TOUID` | 默认接收人 | ❌ | `@all` |
+| `WECOM_TOKEN` | 企业微信回调 Token | 回调 | - |
+| `WECOM_ENCODING_AES_KEY` | 企业微信回调 EncodingAESKey（加密模式） | 回调 | - |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | TG | - |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram Webhook 验证密钥 | ❌ | - |
+| `TELEGRAM_ALLOWED_USERS` | 允许访问的 Telegram 用户 ID（逗号分隔） | ❌ | 空表示允许所有 |
+| `TELEGRAM_API_BASE` | Telegram API 地址（使用反向代理时设置） | ❌ | `https://api.telegram.org` |
+| `CACHE_TYPE` | 缓存类型：`none`/`memory`/`redis`（推荐 `memory`） | ❌ | `none` |
+| `REDIS_STAT` | Redis 状态：`ON`/`OFF` | ❌ | `OFF` |
+| `REDIS_ADDR` | Redis 地址 | ❌ | `localhost:6379` |
+| `REDIS_PASSWORD` | Redis 密码 | ❌ | - |
+| `MAIL_FOOTER_URL` | 邮件底部链接地址 | ❌ | - |
+
+> **必填列说明**：✅ = 必填，❌ = 可选，企微 = 使用企业微信功能时必填，回调 = 使用企微回调时必填，TG = 使用 Telegram Bot 时必填
 
 ## 项目结构
 
