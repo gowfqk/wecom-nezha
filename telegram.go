@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -268,30 +266,6 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		return
 	}
 
-	// 检查是否处于终端模式
-	pendingMutex.RLock()
-	pendingAct, hasTerminalPending := pendingActions[userID]
-	pendingMutex.RUnlock()
-	if hasTerminalPending && pendingAct.Type == "terminal" {
-		if content == "取消" || content == "cancel" {
-			pendingMutex.Lock()
-			delete(pendingActions, userID)
-			pendingMutex.Unlock()
-			sendTelegramMessage(msg.Chat.ID, "已退出终端模式", nil)
-			return
-		}
-		// 执行命令
-		output := executeCommand(content)
-		// Telegram 消息限 4096 字符
-		if len(output) > 4000 {
-			output = output[:4000] + "\n...(输出过长已截断)"
-		}
-		// 终端输出用代码块格式
-		sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("💻 `$ %s`\n```\n%s```", content, output), nil)
-		return
-	}
-
-	// 处理命令
 	var response string
 	var keyboard *TelegramInlineKeyboard
 
@@ -404,18 +378,6 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		pendingMutex.Unlock()
 		response = fmt.Sprintf("⚠️ 确定要删除服务器 [%d] %s 吗？\n\n此操作不可撤销！", server.ID, server.Name)
 		keyboard = buildConfirmKeyboard()
-	case strings.HasPrefix(data, "terminal:"):
-		// Terminal 回调：进入终端模式
-		serverName := strings.TrimPrefix(data, "terminal:")
-		pendingMutex.Lock()
-		pendingActions[userID] = pendingAction{
-			Type: "terminal",
-			Data: map[string]interface{}{
-				"server": serverName,
-			},
-		}
-		pendingMutex.Unlock()
-		response = fmt.Sprintf("💻 终端模式 — %s\n\n请输入要执行的命令：\n（输入 取消 退出终端模式）", serverName)
 	case strings.HasPrefix(data, "edit:"):
 		// 编辑字段: edit:field:serverName
 		parts := strings.SplitN(strings.TrimPrefix(data, "edit:"), ":", 2)
@@ -787,11 +749,6 @@ DDNS 提供商 - 查看提供商
 服务 历史 <ID> - 查看服务历史
 服务 删除 <ID> - 删除服务监控
 
-━━━━━━ 💻 终端 ━━━━━━
-点击服务器详情中的 Terminal 按钮进入
-终端模式下直接输入命令执行
-输入 取消 退出终端模式
-
 ━━━━━━ 📋 监控参数 ━━━━━━
 指标: cpu / memory / disk
       net_in_speed / net_out_speed / load1
@@ -842,9 +799,6 @@ func buildServerKeyboard() *TelegramInlineKeyboard {
 // buildEditKeyboard 构建编辑操作键盘
 func buildEditKeyboard(serverName string) *TelegramInlineKeyboard {
 	buttons := [][]TelegramInlineKeyboardButton{
-		{
-			{Text: "💻 Terminal", CallbackData: fmt.Sprintf("terminal:%s", serverName)},
-		},
 		{
 			{Text: "✏️ 修改名称", CallbackData: fmt.Sprintf("edit:name:%s", serverName)},
 			{Text: "🏷️ 修改标签", CallbackData: fmt.Sprintf("edit:note:%s", serverName)},
@@ -1188,26 +1142,4 @@ func SetTelegramBotCommands() error {
 
 	logger.Println("Telegram Bot 命令菜单设置成功")
 	return nil
-}
-
-// executeCommand 执行终端命令，返回输出
-func executeCommand(cmd string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// 优先 bash，不存在则用 sh
-	shell := "/bin/bash"
-	if _, err := exec.LookPath("bash"); err != nil {
-		shell = "/bin/sh"
-	}
-
-	c := exec.CommandContext(ctx, shell, "-c", cmd)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("%s\n[错误] %v", string(out), err)
-	}
-	if len(out) == 0 {
-		return "(无输出)"
-	}
-	return string(out)
 }
