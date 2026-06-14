@@ -250,6 +250,22 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		return
 	}
 
+	// 分组名称修改
+	if edit.Field == "group_name" {
+		newName := strings.TrimSpace(content)
+		if newName == "" {
+			sendTelegramMessage(msg.Chat.ID, "分组名称不能为空", nil)
+			return
+		}
+		err := UpdateServerGroup(edit.ServerID, newName)
+		if err != nil {
+			sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("❌ 改名失败: %v", err), nil)
+			return
+		}
+		sendTelegramMessage(msg.Chat.ID, fmt.Sprintf("✅ 分组 [%d] 已改名为: %s", edit.ServerID, newName), buildGroupKeyboard())
+		return
+	}
+
 	// 处理命令
 	var response string
 	var keyboard *TelegramInlineKeyboard
@@ -275,6 +291,14 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		response = getDDNSList()
 	case content == "/notification", content == "通知", content == "notification":
 		response = getNotificationList()
+	case content == "/alert", content == "告警", content == "alert-rule":
+		response = getAlertRuleListCmd()
+	case content == "/cron", content == "定时任务", content == "任务", content == "cron":
+		response = getCronListCmd()
+	case content == "/notifygroup", content == "通知分组", content == "notification-group":
+		response = getNotificationGroupListCmd()
+	case content == "/group", content == "分组", content == "group":
+		response = getServerGroupListCmd()
 	case content == "/install", content == "安装", content == "agent":
 		response = `安装命令用法：
 选择平台获取安装命令：`
@@ -290,7 +314,7 @@ func handleTelegramMessage(msg *TelegramMessage) {
 			}
 		}
 		// 不是服务器名或包含空格，走通用消息处理
-		response = processUserMessage(content, userID)
+		response, keyboard = processUserMessage(content, userID)
 	}
 
 	// 发送回复
@@ -473,6 +497,146 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		default:
 			response = "未知 NAT 操作"
 		}
+	case strings.HasPrefix(data, "group:"):
+		// 服务器分组操作回调
+		groupAction := strings.TrimPrefix(data, "group:")
+		switch {
+		case groupAction == "list":
+			response = getServerGroupListCmd()
+			keyboard = buildGroupKeyboard()
+		case groupAction == "create":
+			// 进入分组创建流程
+			pendingMutex.Lock()
+			pendingActions[userID] = pendingAction{
+				Type: "server_group_create",
+				Data: map[string]interface{}{},
+			}
+			pendingMutex.Unlock()
+			response = "📝 请输入新分组名称："
+		case strings.HasPrefix(groupAction, "view:"):
+			idStr := strings.TrimPrefix(groupAction, "view:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			group, err := GetServerGroup(uint(id))
+			if err != nil {
+				response = fmt.Sprintf("查询失败: %v", err)
+				break
+			}
+			groupName, _ := group["name"].(string)
+			servers, err := GetServersInGroup(uint(id))
+			if err != nil {
+				response = fmt.Sprintf("查询服务器失败: %v", err)
+				break
+			}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("👥 分组: %s (ID: %d)\n\n", groupName, id))
+			if len(servers) == 0 {
+				sb.WriteString("该分组暂无服务器\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("包含 %d 台服务器:\n", len(servers)))
+				for _, s := range servers {
+					status := "🟢"
+					if !s.Online {
+						status = "🔴"
+					}
+					sb.WriteString(fmt.Sprintf("• %s %s\n", status, s.Name))
+				}
+			}
+			response = sb.String()
+			keyboard = buildGroupItemKeyboard(uint(id))
+		case strings.HasPrefix(groupAction, "delete:"):
+			idStr := strings.TrimPrefix(groupAction, "delete:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			group, err := GetServerGroup(uint(id))
+			if err != nil {
+				response = fmt.Sprintf("查询失败: %v", err)
+				break
+			}
+			groupName, _ := group["name"].(string)
+			pendingMutex.Lock()
+			pendingActions[userID] = pendingAction{
+				Type: "server_group_delete",
+				Data: map[string]interface{}{
+					"id":   float64(id),
+					"name": groupName,
+				},
+			}
+			pendingMutex.Unlock()
+			response = fmt.Sprintf("确定要删除分组 [%d] %s 吗？\n⚠️ 该分组下的服务器将变为未分组状态\n回复 确认 删除，回复 取消 放弃", id, groupName)
+			keyboard = buildConfirmKeyboard()
+		case strings.HasPrefix(groupAction, "rename:"):
+			idStr := strings.TrimPrefix(groupAction, "rename:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			group, err := GetServerGroup(uint(id))
+			if err != nil {
+				response = fmt.Sprintf("查询失败: %v", err)
+				break
+			}
+			groupName, _ := group["name"].(string)
+			pendingEdits.Lock()
+			pendingEdits.edits[callback.From.ID] = pendingEdit{
+				Field:      "group_name",
+				ServerName: groupName,
+				ServerID:   uint(id),
+			}
+			pendingEdits.Unlock()
+			response = fmt.Sprintf("📝 请输入分组 [%d] %s 的新名称：", id, groupName)
+		default:
+			response = "未知分组操作"
+		}
+	case strings.HasPrefix(data, "notifygroup:"):
+		// 通知分组操作回调
+		ngAction := strings.TrimPrefix(data, "notifygroup:")
+		switch {
+		case ngAction == "list":
+			response = getNotificationGroupListCmd()
+			keyboard = buildNotifyGroupKeyboard()
+		case ngAction == "create":
+			// 进入通知分组创建流程
+			pendingMutex.Lock()
+			pendingActions[userID] = pendingAction{
+				Type: "notification_group_create",
+				Data: map[string]interface{}{},
+			}
+			pendingMutex.Unlock()
+			response = "📝 请输入新通知分组名称："
+		case strings.HasPrefix(ngAction, "delete:"):
+			idStr := strings.TrimPrefix(ngAction, "delete:")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				response = "ID 无效"
+				break
+			}
+			group, err := GetNotifyGroup(uint(id))
+			if err != nil {
+				response = fmt.Sprintf("查询失败: %v", err)
+				break
+			}
+			pendingMutex.Lock()
+			pendingActions[userID] = pendingAction{
+				Type: "notification_group_delete",
+				Data: map[string]interface{}{
+					"id":   float64(id),
+					"name": group["name"].(string),
+				},
+			}
+			pendingMutex.Unlock()
+			response = fmt.Sprintf("确定要删除通知分组 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, group["name"].(string))
+			keyboard = buildConfirmKeyboard()
+		default:
+			response = "未知通知分组操作"
+		}
 	default:
 		// 尝试作为服务器名查询
 		var exactName string
@@ -512,6 +676,7 @@ func getTelegramHelpMessage() string {
 
 ━━━━━━ 🔧 服务器管理 ━━━━━━
 重启 <服务器名> - 重启服务器
+删除服务器 <服务器名> - 删除服务器（⚠️不可撤销）
 安装 linux - Linux 安装命令
 安装 windows - Windows 安装命令
 安装 docker - Docker 安装命令
@@ -539,6 +704,32 @@ DDNS 提供商 - 查看提供商
 通知 添加 <名称> <URL> - 快速添加
 通知 添加 - 分步添加
 通知 删除 <ID> - 删除渠道
+
+━━━━━━ 📁 通知分组 ━━━━━━
+通知分组 - 查看通知分组
+通知分组 创建 <名称> - 创建通知分组
+通知分组 删除 <ID> - 删除分组
+
+━━━━━━ 📦 服务器分组 ━━━━━━
+分组 - 查看服务器分组列表
+分组 创建 <名称> - 创建服务器分组
+分组 删除 <ID> - 删除服务器分组
+分组 改名 <ID> <新名称> - 重命名分组
+分组 查看 <ID> - 查看分组下的服务器
+
+━━━━━━ ⚠️ 告警规则 ━━━━━━
+告警 - 查看告警规则列表
+告警 删除 <ID> - 删除告警规则
+
+━━━━━━ ⏰ 定时任务 ━━━━━━
+定时任务 - 查看定时任务列表
+定时任务 触发 <ID> - 手动触发任务
+定时任务 删除 <ID> - 删除定时任务
+
+━━━━━━ 🔍 服务监控详情 ━━━━━━
+服务 详情 <ID> - 查看服务详情
+服务 历史 <ID> - 查看服务历史
+服务 删除 <ID> - 删除服务监控
 
 ━━━━━━ 📋 监控参数 ━━━━━━
 指标: cpu / memory / disk
@@ -645,6 +836,73 @@ func buildNatItemKeyboard(natID uint, enabled bool) *TelegramInlineKeyboard {
 		},
 		{
 			{Text: "🔙 返回列表", CallbackData: "nat:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildGroupKeyboard 构建服务器分组操作键盘
+func buildGroupKeyboard() *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "➕ 创建分组", CallbackData: "group:create"},
+		},
+		{
+			{Text: "🔄 刷新列表", CallbackData: "group:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildGroupItemKeyboard 构建单个分组项的操作键盘
+func buildGroupItemKeyboard(groupID uint) *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "👀 查看服务器", CallbackData: fmt.Sprintf("group:view:%d", groupID)},
+			{Text: "✏️ 改名", CallbackData: fmt.Sprintf("group:rename:%d", groupID)},
+		},
+		{
+			{Text: "🗑️ 删除", CallbackData: fmt.Sprintf("group:delete:%d", groupID)},
+		},
+		{
+			{Text: "🔙 返回列表", CallbackData: "group:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildNotifyGroupKeyboard 构建通知分组操作键盘
+func buildNotifyGroupKeyboard() *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "➕ 创建分组", CallbackData: "notifygroup:create"},
+		},
+		{
+			{Text: "🔄 刷新列表", CallbackData: "notifygroup:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildNotifyGroupItemKeyboard 构建单个通知分组项的操作键盘
+func buildNotifyGroupItemKeyboard(groupID uint) *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "🗑️ 删除", CallbackData: fmt.Sprintf("notifygroup:delete:%d", groupID)},
+		},
+		{
+			{Text: "🔙 返回列表", CallbackData: "notifygroup:list"},
+		},
+	}
+	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
+}
+
+// buildConfirmKeyboard 构建确认/取消键盘
+func buildConfirmKeyboard() *TelegramInlineKeyboard {
+	buttons := [][]TelegramInlineKeyboardButton{
+		{
+			{Text: "✅ 确认", CallbackData: "confirm:yes"},
+			{Text: "❌ 取消", CallbackData: "cancel"},
 		},
 	}
 	return &TelegramInlineKeyboard{InlineKeyboardMarkup: buttons}
@@ -815,6 +1073,10 @@ func SetTelegramBotCommands() error {
 		{Command: "list", Description: "📋 所有服务器列表"},
 		{Command: "offline", Description: "🔴 离线服务器"},
 		{Command: "service", Description: "🔍 服务监控状态"},
+		{Command: "alert", Description: "⚠️ 告警规则列表"},
+		{Command: "cron", Description: "⏰ 定时任务列表"},
+		{Command: "notifygroup", Description: "📁 通知分组列表"},
+		{Command: "group", Description: "📦 服务器分组列表"},
 		{Command: "nat", Description: "🌐 NAT 穿透列表"},
 		{Command: "ddns", Description: "🔄 DDNS 配置列表"},
 		{Command: "notification", Description: "📢 通知渠道列表"},

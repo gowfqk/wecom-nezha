@@ -118,6 +118,7 @@ type NezhaServer struct {
 	ID         uint   `json:"id"`
 	Name       string `json:"name"`
 	Tag        string `json:"note"`         // 哪吒 Server 模型的 note 字段（标签）
+	GroupID    uint   `json:"group_id"`     // 服务器分组 ID
 	LastActive   FlexibleInt64 `json:"last_active"`
 	ValidIP      string        `json:"valid_ip"`
 	Note         string        `json:"public_note"`

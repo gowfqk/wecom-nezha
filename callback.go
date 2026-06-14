@@ -177,7 +177,7 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 				markMsgProcessed(decryptedMsg.MsgId)
 			}
 			
-			response := processUserMessage(decryptedMsg.Content, decryptedMsg.FromUserName)
+			response, _ := processUserMessage(decryptedMsg.Content, decryptedMsg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(decryptedMsg.FromUserName, response)
 		}
@@ -206,7 +206,7 @@ func handleCallbackMessage(res http.ResponseWriter, req *http.Request) {
 				markMsgProcessed(msg.MsgId)
 			}
 			
-			response := processUserMessage(msg.Content, msg.FromUserName)
+			response, _ := processUserMessage(msg.Content, msg.FromUserName)
 			logger.Printf("发送回复: %s", response)
 			sendReplyMessage(msg.FromUserName, response)
 		}
@@ -326,14 +326,16 @@ func resolveServer(name string, matchTag bool) (*NezhaServer, string) {
 	return nil, fmt.Sprintf("未找到服务器: %s", name)
 }
 
-// processUserMessage 处理用户消息，返回回复内容
-func processUserMessage(content, userID string) string {
+// processUserMessage 处理用户消息，返回回复内容和键盘
+func processUserMessage(content, userID string) (string, *TelegramInlineKeyboard) {
 	content = strings.TrimSpace(content)
 
 	// 检查是否有待确认操作
 	if content == "确认" || content == "取消" {
-		return handleConfirmAction(content, userID)
+		return handleConfirmAction(content, userID), nil
 	}
+
+	var keyboard *TelegramInlineKeyboard
 
 	switch content {
 	case "帮助", "help", "?":
@@ -345,6 +347,9 @@ func processUserMessage(content, userID string) string {
 - 详情 服务器名：查看服务器完整信息
 - 监控 服务器名 [指标] [周期]：查看监控历史
 - 服务：查看服务监控状态
+- 服务 详情 ID：查看单个服务监控详情
+- 服务 历史 ID：查看服务监控历史记录
+- 服务 删除 ID：删除服务监控（需确认）
 - 重启 服务器名：重启服务器（需确认）
 - 服务器名：快速查看服务器状态
 - NAT：查看穿透配置列表
@@ -360,82 +365,162 @@ func processUserMessage(content, userID string) string {
 - 通知：查看通知渠道列表
 - 通知 添加 名称 URL：快速添加通知渠道
 - 通知 删除 ID：删除通知渠道（需确认）
+- 通知分组：查看通知分组列表
+- 通知分组 创建 名称：创建通知分组（需确认）
+- 通知分组 删除 ID：删除通知分组（需确认）
+- 分组：查看服务器分组列表
+- 分组 创建 名称：创建服务器分组（需确认）
+- 分组 删除 ID：删除服务器分组（需确认）
+- 分组 改名 ID 新名称：重命名服务器分组（需确认）
+- 分组 查看 ID：查看分组下的服务器
+- 告警：查看告警规则列表
+- 告警 删除 ID：删除告警规则（需确认）
+- 定时任务：查看定时任务列表
+- 定时任务 触发 ID：手动触发任务（需确认）
+- 定时任务 删除 ID：删除定时任务（需确认）
 - 修改 服务器名 字段 新值：修改服务器信息（名称/标签/备注）
 - 标签 服务器名 标签内容：更新服务器私有备注/标签
+- 删除服务器 服务器名：删除服务器（⚠️不可撤销，需确认）
 - 确认/取消：通用确认机制
 
 监控指标: cpu/memory/disk/net_in_speed/net_out_speed/load1
-监控周期: 1d(默认)/7d/30d`
+监控周期: 1d(默认)/7d/30d`, nil
 	case "状态", "状态查询":
-		return getServerStatusSummary()
+		return getServerStatusSummary(), nil
 	case "离线":
-		return getOfflineServersList()
+		return getOfflineServersList(), nil
 	case "列表", "list":
-		return getServerList()
+		return getServerList(), nil
 	case "服务", "service":
-		return getServiceStatus()
+		return getServiceStatus(), nil
 	case "安装", "agent":
 		return `安装命令用法：
 - 安装 linux：Linux 一键安装
 - 安装 windows：Windows 安装命令
-- 安装 docker：Docker 安装命令`
+- 安装 docker：Docker 安装命令`, nil
 	default:
 		lower := strings.ToLower(content)
 
 		// NAT 命令
 		if lower == "nat" || lower == "nat 列表" {
-			return getNatList()
+			return getNatList(), nil
 		}
 		if strings.HasPrefix(lower, "nat 添加") {
-			return startNatAdd(userID, content)
+			return startNatAdd(userID, content), nil
 		}
 		if strings.HasPrefix(lower, "nat 删除") {
-			return startNatDelete(userID, content)
+			return startNatDelete(userID, content), nil
 		}
 		if strings.HasPrefix(lower, "nat 启用") || strings.HasPrefix(lower, "nat 禁用") {
-			return toggleNatCmd(content)
+			return toggleNatCmd(content), nil
 		}
 		if strings.HasPrefix(lower, "nat 修改") {
-			return updateNatCmd(content)
+			return updateNatCmd(content), nil
 		}
 
 		// DDNS 命令
 		if lower == "ddns" || lower == "ddns 列表" {
-			return getDDNSList()
+			return getDDNSList(), nil
 		}
 		if lower == "ddns 提供商" || lower == "ddns providers" {
-			return getDDNSProviders()
+			return getDDNSProviders(), nil
 		}
 		if strings.HasPrefix(lower, "ddns 添加") {
-			return startDDNSAdd(userID, content)
+			return startDDNSAdd(userID, content), nil
 		}
 		if strings.HasPrefix(lower, "ddns 删除") {
-			return startDDNSDelete(userID, content)
+			return startDDNSDelete(userID, content), nil
 		}
 		if strings.HasPrefix(lower, "ddns 启用") || strings.HasPrefix(lower, "ddns 禁用") {
-			return toggleDDNSCmd(content)
+			return toggleDDNSCmd(content), nil
 		}
 
 		// 通知渠道命令
 		if lower == "通知" || lower == "通知 列表" || lower == "notification" {
-			return getNotificationList()
+			return getNotificationList(), nil
 		}
 		if strings.HasPrefix(lower, "通知 添加") || strings.HasPrefix(lower, "通知 新增") {
-			return startNotificationAdd(userID, content)
+			return startNotificationAdd(userID, content), nil
 		}
 		if strings.HasPrefix(lower, "通知 删除") {
-			return startNotificationDelete(userID, content)
+			return startNotificationDelete(userID, content), nil
+		}
+
+		// 通知分组命令
+		if lower == "通知分组" || lower == "通知分组 列表" || lower == "notification-group" {
+			keyboard = buildNotifyGroupKeyboard()
+			return getNotificationGroupListCmd(), keyboard
+		}
+		if strings.HasPrefix(lower, "通知分组 删除") {
+			return startNotificationGroupDelete(userID, content), nil
+		}
+		if strings.HasPrefix(lower, "通知分组 创建") || strings.HasPrefix(lower, "通知分组 新增") {
+			return startNotificationGroupCreate(content, userID), nil
+		}
+
+		// 服务器分组命令
+		if lower == "分组" || lower == "分组 列表" || lower == "group" {
+			keyboard = buildGroupKeyboard()
+			return getServerGroupListCmd(), keyboard
+		}
+		if strings.HasPrefix(lower, "分组 创建") || strings.HasPrefix(lower, "分组 新增") {
+			return startServerGroupCreate(content, userID), nil
+		}
+		if strings.HasPrefix(lower, "分组 删除") {
+			return startServerGroupDelete(userID, content), nil
+		}
+		if strings.HasPrefix(lower, "分组 改名") || strings.HasPrefix(lower, "分组 重命名") {
+			return startServerGroupRename(content, userID), nil
+		}
+		if strings.HasPrefix(lower, "分组 查看") {
+			return getServerGroupFilterCmd(content), nil
+		}
+
+		// 告警规则命令
+		if lower == "告警" || lower == "告警 列表" || lower == "告警规则" || lower == "alert-rule" {
+			return getAlertRuleListCmd(), nil
+		}
+		if strings.HasPrefix(lower, "告警 删除") {
+			return startAlertRuleDelete(userID, content), nil
+		}
+
+		// 定时任务命令
+		if lower == "定时任务" || lower == "定时任务 列表" || lower == "任务" || lower == "cron" {
+			return getCronListCmd(), nil
+		}
+		if strings.HasPrefix(lower, "定时任务 触发") || strings.HasPrefix(lower, "任务 触发") {
+			return startCronTrigger(userID, content), nil
+		}
+		if strings.HasPrefix(lower, "定时任务 删除") || strings.HasPrefix(lower, "任务 删除") {
+			return startCronDelete(userID, content), nil
+		}
+
+		// 服务监控详细命令
+		if strings.HasPrefix(lower, "服务 详情") {
+			return getServiceDetailCmd(content), nil
+		}
+		if strings.HasPrefix(lower, "服务 历史") {
+			return getServiceHistoryCmd(content), nil
+		}
+		if strings.HasPrefix(lower, "服务 删除") {
+			return getServiceDeleteCmd(userID, content), nil
 		}
 
 		// 标签/备注命令
 		if strings.HasPrefix(lower, "标签 ") || strings.HasPrefix(lower, "标签	") ||
 			strings.HasPrefix(lower, "备注 ") || strings.HasPrefix(lower, "备注	") {
-			return updateServerNoteCmd(content)
+			return updateServerNoteCmd(content), nil
 		}
 
 		// 修改命令: 修改 服务器名 字段 新值
 		if strings.HasPrefix(lower, "修改 ") || strings.HasPrefix(lower, "修改	") {
-			return updateServerFieldCmd(content)
+			return updateServerFieldCmd(content), nil
+		}
+
+		// 删除服务器命令
+		if strings.HasPrefix(lower, "删除服务器 ") || strings.HasPrefix(lower, "删除服务器	") ||
+			strings.HasPrefix(lower, "移除服务器 ") || strings.HasPrefix(lower, "移除服务器	") {
+			return startServerDelete(content, userID), nil
 		}
 
 		// 检查是否有待确认的 NAT 添加步骤（含 step 字段表示分步进行中）
@@ -444,17 +529,17 @@ func processUserMessage(content, userID string) string {
 		pendingMutex.RUnlock()
 		if hasPending && action.Type == "nat_add" {
 			if _, hasStep := action.Data["step"]; hasStep {
-				return handleNatAddStep(userID, content)
+				return handleNatAddStep(userID, content), nil
 			}
 		}
 		if hasPending && action.Type == "ddns_add" {
 			if _, hasStep := action.Data["step"]; hasStep {
-				return handleDDNSAddStep(userID, content)
+				return handleDDNSAddStep(userID, content), nil
 			}
 		}
 		if hasPending && action.Type == "notification_add" {
 			if _, hasStep := action.Data["step"]; hasStep {
-				return handleNotificationAddStep(userID, content)
+				return handleNotificationAddStep(userID, content), nil
 			}
 		}
 
@@ -465,34 +550,34 @@ func processUserMessage(content, userID string) string {
 				return `安装命令用法：
 - 安装 linux：Linux 一键安装
 - 安装 windows：Windows 安装命令
-- 安装 docker：Docker 安装命令`
+- 安装 docker：Docker 安装命令`, nil
 			}
-			return getAgentInstallCmd(platform)
+			return getAgentInstallCmd(platform), nil
 		}
 
 		// 监控历史命令
 		if strings.HasPrefix(lower, "监控 ") || strings.HasPrefix(lower, "monitor ") {
-			return getServerMetricsCmd(content)
+			return getServerMetricsCmd(content), nil
 		}
 
 		// 详情命令
 		if strings.HasPrefix(lower, "详情 ") {
 			name := strings.TrimSpace(strings.TrimPrefix(lower, "详情 "))
-			return getServerDetailFull(name)
+			return getServerDetailFull(name), nil
 		}
 
 		// 重启命令
 		if strings.HasPrefix(lower, "重启 ") {
 			name := strings.TrimSpace(strings.TrimPrefix(lower, "重启 "))
-			return restartServer(name, userID)
+			return restartServer(name, userID), nil
 		}
 
 		// 尝试匹配服务器名（快速查看）
 		detail := getServerDetail(content)
 		if strings.Contains(detail, "未找到") {
-			return "未知命令，发送 帮助 查看可用命令"
+			return "未知命令，发送 帮助 查看可用命令", nil
 		}
-		return detail
+		return detail, nil
 	}
 }
 
@@ -1165,6 +1250,149 @@ func handleConfirmAction(content, userID string) string {
 			return fmt.Sprintf("添加通知渠道失败: %v", err)
 		}
 		return fmt.Sprintf("✅ 通知渠道已创建\n名称: %s\nURL: %s", data["name"], data["url"])
+
+	case "alert_rule_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteAlertRule(id)
+		if err != nil {
+			return fmt.Sprintf("删除告警规则失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 告警规则已删除: %s", name)
+
+	case "cron_trigger":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := TriggerCron(id)
+		if err != nil {
+			return fmt.Sprintf("触发任务失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 已触发任务: %s", name)
+
+	case "cron_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteCron(id)
+		if err != nil {
+			return fmt.Sprintf("删除定时任务失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 定时任务已删除: %s", name)
+
+	case "notification_group_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteNotificationGroup(id)
+		if err != nil {
+			return fmt.Sprintf("删除通知分组失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 通知分组已删除: %s", name)
+
+	case "service_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteService(id)
+		if err != nil {
+			return fmt.Sprintf("删除服务监控失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 服务监控已删除: %s", name)
+
+	case "server_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteServer(id)
+		if err != nil {
+			return fmt.Sprintf("删除服务器失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 服务器已删除: %s (ID: %d)", name, id)
+
+	case "server_group_create":
+		name := action.Data["name"].(string)
+		err := CreateServerGroup(name)
+		if err != nil {
+			return fmt.Sprintf("创建服务器分组失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 服务器分组已创建: %s", name)
+
+	case "server_group_delete":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		name := action.Data["name"].(string)
+		err := DeleteServerGroup(id)
+		if err != nil {
+			return fmt.Sprintf("删除服务器分组失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 服务器分组已删除: %s", name)
+
+	case "server_group_rename":
+		var id uint
+		switch v := action.Data["id"].(type) {
+		case uint:
+			id = v
+		case float64:
+			id = uint(v)
+		}
+		oldName := action.Data["old_name"].(string)
+		newName := action.Data["new_name"].(string)
+		err := UpdateServerGroup(id, newName)
+		if err != nil {
+			return fmt.Sprintf("重命名服务器分组失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 服务器分组已改名: %s → %s", oldName, newName)
+
+	case "notification_group_create":
+		name := action.Data["name"].(string)
+		// 创建通知分组，需要传入通知渠道 ID 列表
+		// 暂时创建空分组，后续可以通过编辑添加渠道
+		groupData := map[string]interface{}{
+			"name":          name,
+			"notifications": []uint{},
+		}
+		err := AddNotificationGroup(groupData)
+		if err != nil {
+			return fmt.Sprintf("创建通知分组失败: %v", err)
+		}
+		return fmt.Sprintf("✅ 通知分组已创建: %s\n提示: 请在面板中添加通知渠道", name)
 	}
 
 	return "操作异常"
@@ -2059,4 +2287,691 @@ func updateServerFieldCmd(content string) string {
 
 	return fmt.Sprintf("✅ 已更新 %s 的%s\n%s: %s",
 		server.Name, fieldDisplayName[apiField], fieldDisplayName[apiField], newValue)
+}
+
+// ========== 告警规则管理命令 ==========
+
+func getAlertRuleListCmd() string {
+	rules, err := GetAlertRuleList()
+	if err != nil {
+		return fmt.Sprintf("获取告警规则列表失败: %v", err)
+	}
+	if len(rules) == 0 {
+		return "当前没有告警规则\n发送 告警 添加 开始配置"
+	}
+
+	result := "告警规则列表：\n"
+	for _, r := range rules {
+		id := uint(0)
+		if v, ok := r["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := r["name"].(string)
+		enabled := true
+		if v, ok := r["enabled"].(bool); ok {
+			enabled = v
+		}
+		status := "✅"
+		if !enabled {
+			status = "⏸️"
+		}
+		result += fmt.Sprintf("- [%d] %s %s\n", id, status, name)
+	}
+	result += "\n操作：告警 添加 | 告警 删除 ID"
+	return result
+}
+
+func startAlertRuleDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 告警 删除 ID\n发送 告警 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 告警 查看列表"
+	}
+
+	rules, err := GetAlertRuleList()
+	if err != nil {
+		return fmt.Sprintf("查询告警规则失败: %v", err)
+	}
+	var ruleName string
+	found := false
+	for _, r := range rules {
+		if uint(r["id"].(float64)) == uint(id) {
+			ruleName, _ = r["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的告警规则\n发送 告警 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "alert_rule_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": ruleName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除告警规则 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, ruleName)
+}
+
+// ========== 定时任务管理命令 ==========
+
+func getCronListCmd() string {
+	crons, err := GetCronList()
+	if err != nil {
+		return fmt.Sprintf("获取定时任务列表失败: %v", err)
+	}
+	if len(crons) == 0 {
+		return "当前没有定时任务"
+	}
+
+	// 任务类型映射
+	taskTypeNames := map[float64]string{
+		1: "触发任务",
+		2: "计划任务",
+	}
+
+	result := "定时任务列表：\n"
+	for _, c := range crons {
+		id := uint(0)
+		if v, ok := c["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := c["name"].(string)
+		command, _ := c["command"].(string)
+		scheduler, _ := c["scheduler"].(string)
+
+		taskType := "未知"
+		if v, ok := c["task_type"].(float64); ok {
+			if tn, ok := taskTypeNames[v]; ok {
+				taskType = tn
+			}
+		}
+
+		enabled := true
+		if v, ok := c["enabled"].(bool); ok {
+			enabled = v
+		}
+		status := "✅"
+		if !enabled {
+			status = "⏸️"
+		}
+
+		// 截断命令显示
+		displayCmd := command
+		if len(displayCmd) > 40 {
+			displayCmd = displayCmd[:37] + "..."
+		}
+
+		result += fmt.Sprintf("- [%d] %s %s (%s)\n  命令: %s\n  计划: %s\n",
+			id, status, name, taskType, displayCmd, scheduler)
+	}
+	result += "\n操作：定时任务 触发 ID | 定时任务 删除 ID"
+	return result
+}
+
+func startCronTrigger(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 定时任务 触发 ID\n发送 定时任务 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 定时任务 查看列表"
+	}
+
+	crons, err := GetCronList()
+	if err != nil {
+		return fmt.Sprintf("查询定时任务失败: %v", err)
+	}
+	var cronName string
+	found := false
+	for _, c := range crons {
+		if uint(c["id"].(float64)) == uint(id) {
+			cronName, _ = c["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的定时任务\n发送 定时任务 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "cron_trigger",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": cronName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要触发任务 [%d] %s 吗？\n回复 确认 触发，回复 取消 放弃", id, cronName)
+}
+
+func startCronDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 定时任务 删除 ID\n发送 定时任务 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 定时任务 查看列表"
+	}
+
+	crons, err := GetCronList()
+	if err != nil {
+		return fmt.Sprintf("查询定时任务失败: %v", err)
+	}
+	var cronName string
+	found := false
+	for _, c := range crons {
+		if uint(c["id"].(float64)) == uint(id) {
+			cronName, _ = c["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的定时任务\n发送 定时任务 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "cron_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": cronName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除定时任务 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, cronName)
+}
+
+// ========== 通知分组管理命令 ==========
+
+func getNotificationGroupListCmd() string {
+	groups, err := GetNotificationGroupList()
+	if err != nil {
+		return fmt.Sprintf("获取通知分组列表失败: %v", err)
+	}
+	if len(groups) == 0 {
+		return "当前没有通知分组"
+	}
+
+	result := "通知分组列表：\n"
+	for _, g := range groups {
+		id := uint(0)
+		if v, ok := g["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := g["name"].(string)
+
+		// 获取关联的通知渠道
+		notifyStr := ""
+		if notifs, ok := g["notifications"].([]interface{}); ok && len(notifs) > 0 {
+			notifyNames := []string{}
+			for _, n := range notifs {
+				if nm, ok := n.(map[string]interface{}); ok {
+					if nName, ok := nm["name"].(string); ok {
+						notifyNames = append(notifyNames, nName)
+					}
+				}
+			}
+			if len(notifyNames) > 0 {
+				notifyStr = "\n  渠道: " + strings.Join(notifyNames, ", ")
+			}
+		}
+
+		result += fmt.Sprintf("- [%d] %s%s\n", id, name, notifyStr)
+	}
+	return result
+}
+
+func startNotificationGroupDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 通知分组 删除 ID\n发送 通知分组 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 通知分组 查看列表"
+	}
+
+	groups, err := GetNotificationGroupList()
+	if err != nil {
+		return fmt.Sprintf("查询通知分组失败: %v", err)
+	}
+	var groupName string
+	found := false
+	for _, g := range groups {
+		if uint(g["id"].(float64)) == uint(id) {
+			groupName, _ = g["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的通知分组\n发送 通知分组 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "notification_group_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": groupName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除通知分组 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, groupName)
+}
+
+// ========== 服务监控管理命令 ==========
+
+func getServiceDetailCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 服务 详情 ID\n发送 服务 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 服务 查看列表"
+	}
+
+	detail, err := GetServiceDetail(uint(id))
+	if err != nil {
+		return fmt.Sprintf("获取服务详情失败: %v", err)
+	}
+
+	name, _ := detail["name"].(string)
+	target, _ := detail["target"].(string)
+	sType := uint(0)
+	if v, ok := detail["type"].(float64); ok {
+		sType = uint(v)
+	}
+	typeNames := map[uint]string{0: "TCP", 1: "HTTP", 2: "HTTPS", 3: "DNS", 4: "端口", 5: "Ping"}
+	typeName := typeNames[sType]
+	if typeName == "" {
+		typeName = "未知"
+	}
+
+	result := fmt.Sprintf("服务监控详情 [%d]:\n", id)
+	result += fmt.Sprintf("名称: %s\n", name)
+	result += fmt.Sprintf("类型: %s\n", typeName)
+	result += fmt.Sprintf("目标: %s\n", target)
+
+	// 关联服务器
+	if servers, ok := detail["servers"].([]interface{}); ok && len(servers) > 0 {
+		result += "关联服务器: "
+		for i, s := range servers {
+			if i > 0 {
+				result += ", "
+			}
+			result += fmt.Sprintf("%v", s)
+		}
+		result += "\n"
+	}
+
+	return result
+}
+
+func getServiceHistoryCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 服务 历史 ID\n发送 服务 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 服务 查看列表"
+	}
+
+	history, err := GetServiceHistory(uint(id))
+	if err != nil {
+		return fmt.Sprintf("获取服务历史失败: %v", err)
+	}
+
+	if len(history) == 0 {
+		return fmt.Sprintf("服务 ID=%d 暂无监控历史数据", id)
+	}
+
+	result := fmt.Sprintf("服务 ID=%d 最近监控记录：\n", id)
+	// 只显示最近 10 条
+	count := len(history)
+	if count > 10 {
+		count = 10
+	}
+	for i := 0; i < count; i++ {
+		h := history[len(history)-1-i]
+		createdAt := ""
+		if v, ok := h["created_at"].(string); ok {
+			createdAt = v
+		}
+		avgDelay := float64(0)
+		if v, ok := h["avg_delay"].(float64); ok {
+			avgDelay = v
+		}
+		delayStr := "N/A"
+		if avgDelay > 0 {
+			if avgDelay > 1000 {
+				delayStr = fmt.Sprintf("%.1fs", avgDelay/1000)
+			} else {
+				delayStr = fmt.Sprintf("%.0fms", avgDelay)
+			}
+		}
+		status := "🟢"
+		if avgDelay <= 0 {
+			status = "🔴"
+		}
+		result += fmt.Sprintf("%s %s 延迟: %s\n", status, createdAt, delayStr)
+	}
+	return result
+}
+
+func getServiceDeleteCmd(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 服务 删除 ID\n发送 服务 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 服务 查看列表"
+	}
+
+	detail, err := GetServiceDetail(uint(id))
+	if err != nil {
+		return fmt.Sprintf("查询服务监控失败: %v", err)
+	}
+	serviceName, _ := detail["name"].(string)
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "service_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": serviceName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除服务监控 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, serviceName)
+}
+
+// ========== 服务器分组管理命令 ==========
+
+func getServerGroupListCmd() string {
+	groups, err := GetServerGroupList()
+	if err != nil {
+		return fmt.Sprintf("获取服务器分组列表失败: %v", err)
+	}
+	if len(groups) == 0 {
+		return "当前没有服务器分组\n发送 分组 创建 分组名 创建新分组"
+	}
+
+	// 获取所有服务器，统计每个分组的服务器数量
+	// 注意：需要确认 NezhaServer 结构是否有 GroupID 字段
+	// 暂时使用占位数据
+	groupCount := map[uint]int{}
+	_ = groupCount
+
+	result := "服务器分组列表：\n"
+	for _, g := range groups {
+		id := uint(0)
+		if v, ok := g["id"].(float64); ok {
+			id = uint(v)
+		}
+		name, _ := g["name"].(string)
+		count := groupCount[id]
+
+		result += fmt.Sprintf("- [%d] %s (%d台服务器)\n", id, name, count)
+	}
+	result += "\n操作：分组 创建 名称 | 分组 删除 ID | 分组 改名 ID 新名称"
+	return result
+}
+
+func startServerGroupCreate(content, userID string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 分组 创建 分组名\n示例: 分组 创建 生产环境"
+	}
+
+	groupName := strings.TrimSpace(parts[2])
+
+	// 保存待确认
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "server_group_create",
+		Data: map[string]interface{}{
+			"name": groupName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要创建服务器分组吗？\n名称: %s\n\n回复 确认 创建，回复 取消 放弃", groupName)
+}
+
+func startServerGroupDelete(userID, content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 分组 删除 ID\n发送 分组 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 分组 查看列表"
+	}
+
+	groups, err := GetServerGroupList()
+	if err != nil {
+		return fmt.Sprintf("查询分组失败: %v", err)
+	}
+	var groupName string
+	found := false
+	for _, g := range groups {
+		if uint(g["id"].(float64)) == uint(id) {
+			groupName, _ = g["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的分组\n发送 分组 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "server_group_delete",
+		Data: map[string]interface{}{
+			"id":   float64(id),
+			"name": groupName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要删除分组 [%d] %s 吗？\n回复 确认 删除，回复 取消 放弃", id, groupName)
+}
+
+func startServerGroupRename(content, userID string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 4 {
+		return "用法: 分组 改名 ID 新名称\n示例: 分组 改名 1 生产环境"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 分组 查看列表"
+	}
+
+	newName := strings.TrimSpace(parts[3])
+
+	groups, err := GetServerGroupList()
+	if err != nil {
+		return fmt.Sprintf("查询分组失败: %v", err)
+	}
+	var oldName string
+	found := false
+	for _, g := range groups {
+		if uint(g["id"].(float64)) == uint(id) {
+			oldName, _ = g["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的分组\n发送 分组 查看列表", id)
+	}
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "server_group_rename",
+		Data: map[string]interface{}{
+			"id":       float64(id),
+			"old_name": oldName,
+			"new_name": newName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要改名分组吗？\n[%d] %s → %s\n\n回复 确认 改名，回复 取消 放弃", id, oldName, newName)
+}
+
+func getServerGroupFilterCmd(content string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 分组 查看 ID\n发送 分组 查看列表和ID"
+	}
+
+	id, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "ID 无效，请输入数字\n发送 分组 查看列表"
+	}
+
+	groups, err := GetServerGroupList()
+	if err != nil {
+		return fmt.Sprintf("查询分组失败: %v", err)
+	}
+	var groupName string
+	found := false
+	for _, g := range groups {
+		if uint(g["id"].(float64)) == uint(id) {
+			groupName, _ = g["name"].(string)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("未找到 ID=%d 的分组\n发送 分组 查看列表", id)
+	}
+
+	// 获取该分组下的服务器
+	servers, err := GetNezhaServerList()
+	if err != nil {
+		return fmt.Sprintf("获取服务器列表失败: %v", err)
+	}
+
+	result := fmt.Sprintf("分组 [%d] %s 的服务器：\n", id, groupName)
+	count := 0
+	for _, s := range servers {
+		// 这里需要根据实际的服务器分组字段来过滤
+		// 暂时显示所有服务器，后续需要确认字段名
+		count++
+		status := "🟢"
+		if !s.Online {
+			status = "🔴"
+		}
+		result += fmt.Sprintf("%s %s (%s)\n", status, s.Name, s.ValidIP)
+	}
+
+	if count == 0 {
+		result += "暂无服务器"
+	}
+
+	return result
+}
+
+// ========== 增强通知分组功能 ==========
+
+func startNotificationGroupCreate(content, userID string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 3 {
+		return "用法: 通知分组 创建 分组名\n示例: 通知分组 创建 紧急通知"
+	}
+
+	groupName := strings.TrimSpace(parts[2])
+
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "notification_group_create",
+		Data: map[string]interface{}{
+			"name": groupName,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("确定要创建通知分组吗？\n名称: %s\n\n回复 确认 创建，回复 取消 放弃", groupName)
+}
+
+// ========== 删除服务器命令 ==========
+
+func startServerDelete(content, userID string) string {
+	parts := strings.Fields(content)
+	if len(parts) < 2 {
+		return "用法: 删除服务器 服务器名\n⚠️ 此操作不可撤销！"
+	}
+
+	serverName := strings.TrimSpace(parts[1])
+
+	// 模糊匹配服务器
+	result, err := FindServer(serverName, true)
+	if err != nil {
+		return fmt.Sprintf("查询服务器失败: %v", err)
+	}
+
+	if result.Server == nil {
+		if len(result.Matched) == 0 {
+			return fmt.Sprintf("未找到服务器: %s", serverName)
+		}
+		// 多个匹配，让用户选择
+		msg := "找到多个匹配的服务器：\n"
+		for _, s := range result.Matched {
+			msg += fmt.Sprintf("- %s %s\n", s.Name, summarizeTag(s.Tag))
+		}
+		msg += "\n请用更精确的名称"
+		return msg
+	}
+
+	server := result.Server
+
+	// 保存待确认（双重确认机制）
+	pendingMutex.Lock()
+	pendingActions[userID] = pendingAction{
+		Type: "server_delete",
+		Data: map[string]interface{}{
+			"id":     float64(server.ID),
+			"name":   server.Name,
+			"ip":     server.ValidIP,
+			"platform": server.Host.Platform,
+		},
+	}
+	pendingMutex.Unlock()
+
+	return fmt.Sprintf("⚠️ 警告：此操作不可撤销！\n\n确定要删除服务器吗？\n- 名称: %s\n- ID: %d\n- IP: %s\n- 系统: %s\n\n回复 确认 删除，回复 取消 放弃",
+		server.Name, server.ID, server.ValidIP, server.Host.Platform)
 }

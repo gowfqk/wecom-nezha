@@ -1306,3 +1306,735 @@ func UpdateNotification(id uint, updateData map[string]interface{}) error {
 
 	return nil
 }
+
+// ========== 告警规则管理 ==========
+
+// GetAlertRuleList 获取告警规则列表
+func GetAlertRuleList() ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/alert-rule", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// AddAlertRule 添加告警规则
+func AddAlertRule(ruleData map[string]interface{}) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/alert-rule", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, err := json.Marshal(ruleData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("添加告警规则失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteAlertRule 删除告警规则
+func DeleteAlertRule(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/alert-rule", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除告警规则失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// ========== 定时任务管理 ==========
+
+// GetCronList 获取定时任务列表
+func GetCronList() ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/cron", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// AddCron 添加定时任务
+func AddCron(cronData map[string]interface{}) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/cron", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, err := json.Marshal(cronData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("添加定时任务失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteCron 删除定时任务
+func DeleteCron(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/cron", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除定时任务失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// TriggerCron 手动触发定时任务
+func TriggerCron(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/cron/%d/manual", strings.TrimRight(NezhaUrl, "/"), id)
+	resp, err := nezhaRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("触发任务失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// ========== 服务监控管理 ==========
+
+// GetServiceDetail 获取单个服务监控详情
+func GetServiceDetail(id uint) (map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/service?id=%d", strings.TrimRight(NezhaUrl, "/"), id)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                   `json:"success"`
+		Error   string                 `json:"error"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// GetServiceHistory 获取服务监控历史
+func GetServiceHistory(id uint) ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/service/%d/history", strings.TrimRight(NezhaUrl, "/"), id)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// GetServerServices 获取指定服务器的服务监控列表
+func GetServerServices(serverID uint) ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server/%d/service", strings.TrimRight(NezhaUrl, "/"), serverID)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// AddService 添加服务监控
+func AddService(serviceData map[string]interface{}) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/service", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, err := json.Marshal(serviceData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("添加服务监控失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteService 删除服务监控
+func DeleteService(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/service", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除服务监控失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// ========== 通知分组管理 ==========
+
+// GetNotificationGroupList 获取通知分组列表
+func GetNotificationGroupList() ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/notification-group", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// AddNotificationGroup 添加通知分组
+func AddNotificationGroup(groupData map[string]interface{}) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/notification-group", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, err := json.Marshal(groupData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("添加通知分组失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteNotificationGroup 删除通知分组
+func DeleteNotificationGroup(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/notification-group", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除通知分组失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// ========== 服务器管理 ==========
+
+// GetServerGroupList 获取服务器分组列表
+func GetServerGroupList() ([]map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server-group", strings.TrimRight(NezhaUrl, "/"))
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Error   string                   `json:"error"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// GetServerGroup 获取单个服务器分组详情
+func GetServerGroup(id uint) (map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server-group/%d", strings.TrimRight(NezhaUrl, "/"), id)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                   `json:"success"`
+		Error   string                 `json:"error"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// GetServersInGroup 获取分组下的服务器列表
+func GetServersInGroup(groupID uint) ([]NezhaServer, error) {
+	servers, err := GetNezhaServerList()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []NezhaServer
+	for _, s := range servers {
+		if s.GroupID == groupID {
+			result = append(result, s)
+		}
+	}
+	return result, nil
+}
+
+// GetNotifyGroup 获取单个通知分组详情
+func GetNotifyGroup(id uint) (map[string]interface{}, error) {
+	if err := NezhaLogin(); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/notification-group/%d", strings.TrimRight(NezhaUrl, "/"), id)
+	resp, err := nezhaRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success bool                   `json:"success"`
+		Error   string                 `json:"error"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %s", string(body))
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("API错误: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// CreateServerGroup 创建服务器分组
+func CreateServerGroup(name string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server-group", strings.TrimRight(NezhaUrl, "/"))
+	groupData := map[string]interface{}{
+		"name": name,
+	}
+	jsonData, err := json.Marshal(groupData)
+	if err != nil {
+		return err
+	}
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("创建分组失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteServerGroup 删除服务器分组
+func DeleteServerGroup(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/server-group", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除分组失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// UpdateServerGroup 更新服务器分组
+func UpdateServerGroup(id uint, name string) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/server-group/%d", strings.TrimRight(NezhaUrl, "/"), id)
+	groupData := map[string]interface{}{
+		"name": name,
+	}
+	jsonData, _ := json.Marshal(groupData)
+
+	resp, err := nezhaRequest("PATCH", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("更新分组失败: %s", result.Error)
+	}
+
+	return nil
+}
+
+// DeleteServer 删除服务器
+func DeleteServer(id uint) error {
+	if err := NezhaLogin(); err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/batch-delete/server", strings.TrimRight(NezhaUrl, "/"))
+	jsonData, _ := json.Marshal([]uint{id})
+
+	resp, err := nezhaRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %s", string(body))
+	}
+	if !result.Success {
+		return fmt.Errorf("删除服务器失败: %s", result.Error)
+	}
+
+	return nil
+}
