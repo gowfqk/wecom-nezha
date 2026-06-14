@@ -1195,7 +1195,13 @@ func executeCommand(cmd string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c := exec.CommandContext(ctx, "bash", "-c", cmd)
+	// 优先 bash，不存在则用 sh
+	shell := "/bin/bash"
+	if _, err := exec.LookPath("bash"); err != nil {
+		shell = "/bin/sh"
+	}
+
+	c := exec.CommandContext(ctx, shell, "-c", cmd)
 	out, err := c.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("%s\n[错误] %v", string(out), err)
