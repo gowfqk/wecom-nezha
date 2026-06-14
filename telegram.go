@@ -385,6 +385,25 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		if exactName != "" {
 			keyboard = buildEditKeyboard(exactName)
 		}
+	case strings.HasPrefix(data, "server:delete:"):
+		// 删除服务器确认
+		serverName := strings.TrimPrefix(data, "server:delete:")
+		server, err := GetNezhaServerByName(serverName)
+		if err != nil {
+			response = fmt.Sprintf("未找到服务器: %s", serverName)
+			break
+		}
+		pendingMutex.Lock()
+		pendingActions[userID] = pendingAction{
+			Type: "server_delete",
+			Data: map[string]interface{}{
+				"id":   float64(server.ID),
+				"name": server.Name,
+			},
+		}
+		pendingMutex.Unlock()
+		response = fmt.Sprintf("⚠️ 确定要删除服务器 [%d] %s 吗？\n\n此操作不可撤销！", server.ID, server.Name)
+		keyboard = buildConfirmKeyboard()
 	case strings.HasPrefix(data, "terminal:"):
 		// Terminal 回调：进入终端模式
 		serverName := strings.TrimPrefix(data, "terminal:")
@@ -832,6 +851,9 @@ func buildEditKeyboard(serverName string) *TelegramInlineKeyboard {
 		},
 		{
 			{Text: "📝 修改备注", CallbackData: fmt.Sprintf("edit:public_note:%s", serverName)},
+		},
+		{
+			{Text: "🗑️ 删除服务器", CallbackData: fmt.Sprintf("server:delete:%s", serverName)},
 		},
 		{
 			{Text: "🔙 返回列表", CallbackData: "cmd:list"},
