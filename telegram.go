@@ -351,14 +351,6 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		response = getServiceStatus()
 	case data == "cmd:help":
 		response = getTelegramHelpMessage()
-	case strings.HasPrefix(data, "server:"):
-		// 查询服务器详情
-		serverName := strings.TrimPrefix(data, "server:")
-		var exactName string
-		response, exactName = getServerDetailWithExactName(serverName)
-		if exactName != "" {
-			keyboard = buildEditKeyboard(exactName)
-		}
 	case strings.HasPrefix(data, "server:delete:"):
 		// 删除服务器确认
 		serverName := strings.TrimPrefix(data, "server:delete:")
@@ -378,6 +370,14 @@ func handleTelegramCallback(callback *TelegramCallbackQuery) {
 		pendingMutex.Unlock()
 		response = fmt.Sprintf("⚠️ 确定要删除服务器 [%d] %s 吗？\n\n此操作不可撤销！", server.ID, server.Name)
 		keyboard = buildConfirmKeyboard()
+	case strings.HasPrefix(data, "server:"):
+		// 查询服务器详情
+		serverName := strings.TrimPrefix(data, "server:")
+		var exactName string
+		response, exactName = getServerDetailWithExactName(serverName)
+		if exactName != "" {
+			keyboard = buildEditKeyboard(exactName)
+		}
 	case strings.HasPrefix(data, "edit:"):
 		// 编辑字段: edit:field:serverName
 		parts := strings.SplitN(strings.TrimPrefix(data, "edit:"), ":", 2)
