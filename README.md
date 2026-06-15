@@ -11,12 +11,14 @@
   - Callback Query：一键确认操作
   - 命令支持：`/status`、`/list`、`/offline`、`/service`、`/help`
   - 复用所有哪吒监控命令
+- ✅ **Telegram 消息推送**：通过 `/telegram/push` 接口向指定用户推送消息
 - ✅ **哪吒监控集成**：
   - 接收企业微信/Telegram 消息，查询服务器状态
   - 支持关键词：`状态`、`离线`、`列表`、`帮助`
   - 支持服务器名称精确/模糊查询
   - 支持 Agent 安装命令（Linux / Windows / Docker）
   - 支持服务器重启（自动识别平台）
+  - 支持删除服务器（需确认）
 - ✅ **NAT 穿透管理**：
   - 查看、添加、删除、启用/禁用 NAT 配置
   - 添加时分步引导，删除/修改需确认
@@ -26,6 +28,17 @@
 - ✅ **通知渠道管理**：
   - 查看、添加、删除通知渠道
   - 支持快速添加和分步引导两种模式
+- ✅ **通知分组管理**：
+  - 查看、创建、删除通知分组
+  - Inline Keyboard 交互
+- ✅ **服务器分组管理**：
+  - 查看、创建、删除、改名服务器分组
+  - 查看分组下的服务器列表
+  - Inline Keyboard 交互
+- ✅ **告警规则管理**：
+  - 查看、删除告警规则
+- ✅ **定时任务管理**：
+  - 查看、触发、删除定时任务
 - ✅ **企业微信回调**：支持明文模式和加密模式
 - ✅ **健康检查**：`/healthz`（存活）、`/readyz`（就绪）
 - ✅ **Docker 部署**：支持多架构构建（amd64、arm64）
@@ -267,16 +280,66 @@ curl -X POST https://your-domain.com/wecomchan \
 | `/list` / `列表` | 查看所有服务器（带 Inline Keyboard） |
 | `/offline` / `离线` | 查看离线服务器列表 |
 | `/service` / `服务` | 查看服务监控状态 |
+| `/alert` / `告警` | 查看告警规则列表 |
+| `/cron` / `定时任务` | 查看定时任务列表 |
+| `/group` / `分组` | 查看服务器分组列表 |
 | `<服务器名>` | 查询指定服务器详情（支持模糊匹配） |
 | `详情 <服务器名>` | 查看服务器完整信息 |
 | `重启 <服务器名>` | 重启服务器（需确认） |
+| `删除服务器 <服务器名>` | 删除服务器（需确认） |
 | `安装 linux/windows/docker` | 获取 Agent 安装命令 |
 | `NAT` / `DDNS` / `通知` | 管理功能 |
 
 **Inline Keyboard 交互**：
 - `/list` 命令会显示服务器列表键盘，点击可查看详情
-- 底部操作按钮：状态概览、离线列表、刷新、帮助
+- 服务器详情：修改名称/标签/备注、删除服务器
+- 分组/通知分组列表：创建、刷新、删除、改名
 - 确认/取消操作使用 Inline Keyboard 按钮
+
+---
+
+### Telegram 消息推送 - `/telegram/push`
+
+**请求方式**：`POST`
+
+**Content-Type**: `application/json`
+
+**认证方式**：Body 中的 `sendkey` 字段
+
+**请求参数**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `sendkey` | string | ✅ | 认证密钥（与 SENDKEY 一致） |
+| `message` | string | ✅ | 消息内容 |
+| `chat_id` | int64 | ❌ | Telegram chat_id，不填则发送到第一个允许用户 |
+
+**请求示例**：
+
+```bash
+# 指定 chat_id
+curl -X POST https://your-domain.com/telegram/push \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sendkey": "your_sendkey",
+    "chat_id": 691245891,
+    "message": "服务器告警：CPU 使用率超过 90%"
+  }'
+
+# 发送到默认用户（TELEGRAM_ALLOWED_USERS 第一个）
+curl -X POST https://your-domain.com/telegram/push \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sendkey": "your_sendkey",
+    "message": "部署完成！"
+  }'
+```
+
+**响应示例**：
+
+```json
+{"errcode": 0, "errmsg": "ok", "chat_id": 691245891}
+```
 
 ### 健康检查
 
