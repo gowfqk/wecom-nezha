@@ -212,6 +212,15 @@ func handleTelegramMessage(msg *TelegramMessage) {
 	edit, hasEdit := pendingEdits.edits[msg.From.ID]
 	pendingEdits.RUnlock()
 	if hasEdit {
+		// 检查是否取消编辑
+		if content == "取消" || content == "cancel" || content == "/cancel" {
+			pendingEdits.Lock()
+			delete(pendingEdits.edits, msg.From.ID)
+			pendingEdits.Unlock()
+			sendTelegramMessage(msg.Chat.ID, "已取消编辑", nil)
+			return
+		}
+
 		// 清除待编辑状态
 		pendingEdits.Lock()
 		delete(pendingEdits.edits, msg.From.ID)
@@ -222,7 +231,11 @@ func handleTelegramMessage(msg *TelegramMessage) {
 			natID := edit.ServerID
 			host := strings.TrimSpace(content)
 			if !strings.Contains(host, ":") {
-				sendTelegramMessage(msg.Chat.ID, "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080", nil)
+				sendTelegramMessage(msg.Chat.ID, "格式错误，请使用 内网地址:端口 格式\n如: 192.168.1.100:8080\n\n输入 取消 退出编辑", nil)
+				// 恢复编辑状态，让用户重试
+				pendingEdits.Lock()
+				pendingEdits.edits[msg.From.ID] = edit
+				pendingEdits.Unlock()
 				return
 			}
 			err := UpdateNat(natID, host, 0)
@@ -283,6 +296,20 @@ func handleTelegramMessage(msg *TelegramMessage) {
 		response = getOfflineServersList()
 	case content == "/service", content == "服务", content == "service":
 		response = getServiceStatus()
+	case content == "/cancel", content == "cancel", content == "取消":
+		// 取消当前编辑操作
+		pendingEdits.RLock()
+		_, hasEdit := pendingEdits.edits[msg.From.ID]
+		pendingEdits.RUnlock()
+		if hasEdit {
+			pendingEdits.Lock()
+			delete(pendingEdits.edits, msg.From.ID)
+			pendingEdits.Unlock()
+			response = "已取消编辑"
+		} else {
+			response = "没有进行中的编辑"
+		}
+
 	case content == "/nat", content == "nat", content == "NAT":
 		response = getNatList()
 		keyboard = buildNatKeyboard()
