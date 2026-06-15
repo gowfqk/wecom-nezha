@@ -189,3 +189,59 @@ func readyz(res http.ResponseWriter, req *http.Request) {
 	if GetAccessToken() == "" { writeJSON(res, http.StatusServiceUnavailable, `{"status":"degraded","errmsg":"failed to get access token"}`); return }
 	writeJSON(res, http.StatusOK, `{"status":"ready"}`)
 }
+
+// TelegramPushRequest 推送消息请求体
+type TelegramPushRequest struct {
+	Sendkey string `json:"sendkey"`
+	ChatID  int64  `json:"chat_id"`  // Telegram chat_id，为空则发送到默认用户
+	Message string `json:"message"`  // 消息内容
+}
+
+// telegramPushHandler 处理 Telegram 消息推送
+func telegramPushHandler(res http.ResponseWriter, req *http.Request) {
+	if !requirePost(res, req) {
+		return
+	}
+	res.Header().Set("Content-Type", "application/json")
+	req.Body = http.MaxBytesReader(res, req.Body, 1<<20)
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":40001,"errmsg":"invalid request body"}`)
+		return
+	}
+
+	var pushReq TelegramPushRequest
+	if err := json.Unmarshal(body, &pushReq); err != nil {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":40002,"errmsg":"invalid json format"}`)
+		return
+	}
+
+	if pushReq.Sendkey != Sendkey {
+		writeJSON(res, http.StatusUnauthorized, `{"errcode":40001,"errmsg":"invalid sendkey"}`)
+		return
+	}
+
+	if pushReq.Message == "" {
+		writeJSON(res, http.StatusBadRequest, `{"errcode":40003,"errmsg":"message is empty"}`)
+		return
+	}
+
+	chatID := pushReq.ChatID
+	if chatID == 0 {
+		// 默认发送到第一个允许的用户
+		allowedUsers := strings.Split(TelegramAllowedUsers, ",")
+		if len(allowedUsers) > 0 && allowedUsers[0] != "" {
+			fmt.Sscanf(allowedUsers[0], "%d", &chatID)
+		}
+		if chatID == 0 {
+			writeJSON(res, http.StatusBadRequest, `{"errcode":40004,"errmsg":"chat_id is required"}`)
+			return
+		}
+	}
+
+	// 发送消息
+	sendTelegramMessage(int(chatID), pushReq.Message, nil)
+
+	writeJSON(res, http.StatusOK, fmt.Sprintf(`{"errcode":0,"errmsg":"ok","chat_id":%d}`, chatID))
+}

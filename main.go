@@ -29,6 +29,10 @@ func main() {
 		http.HandleFunc("/telegram/webhook", recoverMiddleware(TelegramWebhookHandler))
 		logger.Println("注册处理器: /telegram/webhook")
 
+		// Telegram 消息推送接口
+		http.HandleFunc("/telegram/push", recoverMiddleware(telegramPushHandler))
+		logger.Println("注册处理器: /telegram/push")
+
 		// 设置命令菜单
 		if err := SetTelegramBotCommands(); err != nil {
 			logger.Printf("设置 Telegram 命令菜单失败: %v", err)
