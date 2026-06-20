@@ -217,10 +217,13 @@ func GetNezhaServerList() ([]NezhaServer, error) {
 		return nil, err
 	}
 
-	// 计算在线状态 + 补充 ValidIP
+	// 补充 ValidIP + 校验在线状态
 	now := time.Now().Unix()
 	for i := range servers {
-		servers[i].Online = now-int64(servers[i].LastActive) < 300 // 5分钟内活跃视为在线
+		// API 返回的 online 字段优先，仅在 last_active 有效时用它校验
+		if int64(servers[i].LastActive) > 0 {
+			servers[i].Online = now-int64(servers[i].LastActive) < 300 // 5分钟内活跃视为在线
+		}
 		// API 不返回 valid_ip，从 name 中提取（格式如 "ecs(10.0.0.1)"）
 		if servers[i].ValidIP == "" {
 			if ip := extractIPFromName(servers[i].Name); ip != "" {

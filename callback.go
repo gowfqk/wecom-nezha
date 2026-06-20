@@ -590,15 +590,24 @@ func getServerStatusSummary() string {
 
 	online := 0
 	offline := 0
+	var offlineNames []string
 	for _, s := range servers {
 		if s.Online {
 			online++
 		} else {
 			offline++
+			offlineNames = append(offlineNames, s.Name)
 		}
 	}
 
-	return fmt.Sprintf("服务器状态：\n在线: %d\n离线: %d\n总计: %d", online, offline, len(servers))
+	result := fmt.Sprintf("📊 服务器状态概览\n🟢 在线: %d\n🔴 离线: %d\n📋 总计: %d", online, offline, len(servers))
+	if len(offlineNames) > 0 {
+		result += "\n\n离线服务器:"
+		for _, name := range offlineNames {
+			result += fmt.Sprintf("\n  🔴 %s", name)
+		}
+	}
+	return result
 }
 
 // getOfflineServersList 获取离线服务器列表
